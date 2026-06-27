@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/api';
-import { Users, Award, Medal, Calendar, List, X, Filter, BarChart3, TrendingUp, ChevronRight, Activity, Crown, Star, Eye, EyeOff, ChevronDown } from 'lucide-react';
+import { Award, Calendar, BarChart3, TrendingUp, ChevronRight, Activity } from 'lucide-react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -31,11 +31,7 @@ export default function AdminDashboard() {
   // Local state for UI
   const [selectedLanguage, setSelectedLanguage] = useState('All');
   const [isProgramsVisible, setIsProgramsVisible] = useState(true);
-  // Leaderboard filters
-  const [leaderboardGroup, setLeaderboardGroup] = useState('All');
-  const [leaderboardSort, setLeaderboardSort]   = useState<'desc'|'asc'|'az'>('desc');
-  const [showLeaderboardFilter, setShowLeaderboardFilter] = useState(false);
-  const [showLeaderboard, setShowLeaderboard]   = useState(true);
+
 
   const languages = ['All', 'Malayalam', 'Arabic', 'Urdu', 'English'];
 
@@ -67,20 +63,7 @@ export default function AdminDashboard() {
     return matchesStatus && matchesLanguage;
   });
 
-  // Compute top 10 participants with group filter + sort
-  const leaderboardGroupNames = ['All', ...groups.map((g: any) => g.name)];
 
-  const top10Participants = [...participants]
-    .filter(p => (p.totalScore || 0) > 0)
-    .filter(p => leaderboardGroup === 'All' || p.groupId?.name === leaderboardGroup)
-    .sort((a, b) => {
-      if (leaderboardSort === 'desc') return (b.totalScore || 0) - (a.totalScore || 0);
-      if (leaderboardSort === 'asc')  return (a.totalScore || 0) - (b.totalScore || 0);
-      return a.name.localeCompare(b.name); // az
-    })
-    .slice(0, 10);
-
-  const maxScore = top10Participants.reduce((m, p) => Math.max(m, p.totalScore || 0), 1);
 
   const chartData = {
     labels: teams.map(t => t.name),
@@ -135,7 +118,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-12 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">
@@ -144,7 +127,7 @@ export default function AdminDashboard() {
           <p className="text-gray-400 mt-1">Monitor real-time statistics and manage events</p>
         </div>
         <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/20">
+            <button className="flex items-center gap-2 px-6 py-3 text-sm font-bold text-white bg-purple-600 rounded-xl hover:bg-purple-700 transition-all shadow-lg shadow-purple-900/20">
                 <Activity size={16} />
                 Live Report
             </button>
@@ -154,7 +137,7 @@ export default function AdminDashboard() {
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Team Standings Section */}
-        <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+        <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-2xl p-6 shadow-xl relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
             <TrendingUp size={100} />
           </div>
@@ -167,19 +150,19 @@ export default function AdminDashboard() {
             <Award className="text-blue-500" size={24} />
           </div>
 
-          <div className="relative z-10 overflow-hidden rounded-xl border border-gray-800 bg-gray-900/50 backdrop-blur-sm">
+          <div className="relative z-10 overflow-hidden rounded-xl border border-[#2D283E] bg-[#13111C]/50 backdrop-blur-sm">
             <div className="w-full">
               {/* Desktop Header */}
-              <div className="hidden md:flex border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wider bg-gray-900/80">
+              <div className="hidden md:flex border-b border-[#2D283E] text-gray-400 text-xs uppercase tracking-wider bg-[#13111C]">
                   <div className="p-4 w-24">Rank</div>
                   <div className="p-4 flex-1">Team</div>
                   <div className="p-4 text-right">Points</div>
               </div>
 
-              <div className="divide-y divide-gray-800/50">
+              <div className="divide-y divide-[#2D283E]">
                 {teams.length > 0 ? (
                   teams.map((team: any, index: number) => (
-                    <div key={team._id} className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors">
+                    <div key={team._id} className="flex items-center justify-between p-4 hover:bg-[#252236] transition-colors">
                       <div className="flex items-center gap-4">
                           <div className={`
                             flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm shrink-0
@@ -196,7 +179,7 @@ export default function AdminDashboard() {
                     </div>
                   ))
                 ) : (
-                  <div className="p-8 text-center text-gray-500">No teams found.</div>
+                  <div className="p-8 text-center text-gray-500 italic">No teams found.</div>
                 )}
               </div>
             </div>
@@ -204,7 +187,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Points Distribution Graph */}
-        <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 shadow-xl h-[400px] flex flex-col relative overflow-hidden">
+        <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-2xl p-6 shadow-xl h-[400px] flex flex-col relative overflow-hidden">
            <div className="flex items-center justify-between mb-2">
              <div>
                 <h2 className="text-xl font-bold text-white">Points Distribution</h2>
@@ -218,183 +201,10 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* ── Top 10 Participants Leaderboard ── */}
-      <div className="bg-[#111827] border border-gray-800 rounded-2xl shadow-xl overflow-hidden">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-800">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <span className="text-2xl">🏆</span> Top 10 Participants
-              </h2>
-              <p className="text-sm text-gray-400 mt-0.5">Ranked by total competition points earned</p>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Sort dropdown */}
-              <select
-                value={leaderboardSort}
-                onChange={e => setLeaderboardSort(e.target.value as any)}
-                className="bg-[#0F0D15] border border-gray-700 text-gray-300 text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-purple-500 cursor-pointer"
-              >
-                <option value="desc">↓ Highest First</option>
-                <option value="asc">↑ Lowest First</option>
-                <option value="az">A–Z Name</option>
-              </select>
-
-              {/* Filter toggle button */}
-              <button
-                onClick={() => setShowLeaderboardFilter(f => !f)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${
-                  leaderboardGroup !== 'All'
-                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                    : 'bg-[#0F0D15] text-gray-400 border-gray-700 hover:border-gray-500 hover:text-white'
-                }`}
-              >
-                <Filter size={14} />
-                {leaderboardGroup !== 'All' ? leaderboardGroup : 'Group'}
-              </button>
-
-              {/* Clear filter */}
-              {leaderboardGroup !== 'All' && (
-                <button
-                  onClick={() => setLeaderboardGroup('All')}
-                  className="flex items-center gap-1 px-2 py-2 rounded-lg text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-500/50 transition-all"
-                  title="Clear group filter"
-                >
-                  <X size={14} />
-                </button>
-              )}
-
-              <span className="text-xs font-semibold text-purple-300 bg-purple-500/10 border border-purple-500/20 px-3 py-2 rounded-lg">
-                {top10Participants.length} shown
-              </span>
-
-              {/* Show / Hide toggle */}
-              <button
-                onClick={() => setShowLeaderboard(v => !v)}
-                title={showLeaderboard ? 'Hide participants' : 'Show participants'}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-gray-700 bg-[#0F0D15] text-gray-400 hover:text-white hover:border-gray-500 transition-all"
-              >
-                {showLeaderboard ? <EyeOff size={14} /> : <Eye size={14} />}
-                {showLeaderboard ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </div>
-
-          {/* Group filter pills — toggles on filter button click */}
-          {showLeaderboardFilter && (
-            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-800">
-              <span className="text-xs text-gray-500 self-center mr-1">Filter by Group:</span>
-              {leaderboardGroupNames.map(g => (
-                <button
-                  key={g}
-                  onClick={() => { setLeaderboardGroup(g); setShowLeaderboardFilter(false); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                    leaderboardGroup === g
-                      ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-900/30'
-                      : 'bg-[#0F0D15] text-gray-400 border-gray-700 hover:border-purple-500/50 hover:text-purple-300'
-                  }`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {showLeaderboard && (
-          top10Participants.length === 0 ? (
-            <div className="p-12 text-center text-gray-500 flex flex-col items-center gap-3">
-              <Award size={48} className="opacity-20" />
-              <p>No ranked participants yet. Scores will appear after programs are calculated.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-800/50">
-              {top10Participants.map((p: any, index: number) => {
-                const scorePercent = ((p.totalScore || 0) / maxScore) * 100;
-                const medal =
-                  index === 0 ? { emoji: '🥇', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/30' } :
-                  index === 1 ? { emoji: '🥈', color: 'text-gray-300', bg: 'bg-gray-300/10 border-gray-300/30' } :
-                  index === 2 ? { emoji: '🥉', color: 'text-amber-600', bg: 'bg-amber-700/10 border-amber-700/30' } :
-                                { emoji: null, color: 'text-gray-500', bg: 'bg-gray-800 border-gray-700/50' };
-                return (
-                  <div
-                    key={p._id}
-                    className={`flex items-center gap-4 p-4 px-6 hover:bg-white/5 transition-all group ${
-                      index < 3 ? 'bg-gradient-to-r from-white/[0.02] to-transparent' : ''
-                    }`}
-                  >
-                    {/* Rank Badge */}
-                    <div className={`flex items-center justify-center w-9 h-9 rounded-full font-bold text-sm shrink-0 border ${medal.bg} ${medal.color}`}>
-                      {medal.emoji ? <span className="text-lg">{medal.emoji}</span> : index + 1}
-                    </div>
-
-                    {/* Participant Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-white truncate">{p.name}</span>
-                        <span className="text-xs font-mono text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">#{p.chestNumber}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {p.teamId?.name && (
-                          <span className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
-                            {p.teamId.name}
-                          </span>
-                        )}
-                        {p.groupId?.name && (
-                          <span className="text-xs text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full">
-                            {p.groupId.name}
-                          </span>
-                        )}
-                      </div>
-                      {/* Score bar */}
-                      <div className="mt-2 h-1.5 w-full bg-gray-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${
-                            index === 0 ? 'bg-gradient-to-r from-yellow-500 to-amber-400' :
-                            index === 1 ? 'bg-gradient-to-r from-gray-400 to-gray-300' :
-                            index === 2 ? 'bg-gradient-to-r from-amber-700 to-amber-500' :
-                            'bg-gradient-to-r from-purple-600 to-indigo-500'
-                          }`}
-                          style={{ width: `${scorePercent}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Score */}
-                    <div className={`text-right shrink-0 font-bold text-xl tabular-nums ${
-                      index === 0 ? 'text-yellow-400' :
-                      index === 1 ? 'text-gray-300' :
-                      index === 2 ? 'text-amber-500' :
-                      'text-purple-400'
-                    }`}>
-                      {p.totalScore}
-                      <span className="text-xs text-gray-500 font-normal ml-1">pts</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )
-        )}
-
-        {/* Collapsed indicator */}
-        {!showLeaderboard && (
-          <div
-            onClick={() => setShowLeaderboard(true)}
-            className="flex items-center justify-center gap-2 py-4 text-gray-600 hover:text-gray-400 cursor-pointer transition-colors text-sm select-none"
-          >
-            <ChevronDown size={16} />
-            Click to show {top10Participants.length} participants
-          </div>
-        )}
-      </div>
 
 
-      <div className="bg-[#111827] border border-gray-800 rounded-2xl shadow-xl overflow-hidden mb-20 md:mb-0 max-w-full">
-        <div className="p-6 border-b border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-2xl shadow-xl overflow-hidden mb-20 md:mb-0 max-w-full">
+        <div className="p-6 border-b border-[#2D283E] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
                 Active Programs
@@ -405,15 +215,15 @@ export default function AdminDashboard() {
             </div>
             
             <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                <div className="bg-gray-900 p-1 rounded-lg border border-gray-800 flex w-full sm:w-auto overflow-x-auto">
+                <div className="bg-[#13111C] p-1 rounded-lg border border-[#2D283E] flex w-full sm:w-auto overflow-x-auto">
                     {languages.map(lang => (
                         <button
                             key={lang}
                             onClick={() => setSelectedLanguage(lang)}
                             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
                                 selectedLanguage === lang
-                                    ? 'bg-blue-600 text-white shadow-md'
-                                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                                    ? 'bg-purple-600 text-white shadow-md shadow-purple-900/30'
+                                    : 'text-gray-400 hover:text-white hover:bg-[#252236]'
                             }`}
                         >
                             {lang}
@@ -428,9 +238,9 @@ export default function AdminDashboard() {
                 {activePrograms.length > 0 ? (
                 <ProgramCards programs={activePrograms} onStatusUpdate={handleStatusUpdate} />
                 ) : (
-                <div className="text-center text-gray-500 py-12 flex flex-col items-center">
-                    <Calendar size={48} className="mb-4 opacity-20" />
-                    <p>No active programs matching your filters</p>
+                <div className="col-span-full text-center p-12 bg-[#13111C]/50 rounded-3xl border border-dashed border-[#2D283E] mx-4 mb-4 flex flex-col items-center gap-2">
+                    <Calendar size={48} className="opacity-20 text-purple-500" />
+                    <p className="text-gray-400">No active programs matching your filters</p>
                 </div>
                 )}
             </div>
@@ -465,7 +275,7 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
   return (
     <div className="w-full">
         {/* Desktop Header */}
-        <div className="hidden md:grid grid-cols-12 gap-4 border-b border-gray-800 text-gray-400 bg-gray-900/50 text-xs uppercase tracking-wider p-4 pl-6">
+        <div className="hidden md:grid grid-cols-12 gap-4 border-b border-[#2D283E] text-gray-400 bg-[#13111C] text-xs uppercase tracking-wider p-4 pl-6">
             <div className="col-span-1">#</div>
             <div className="col-span-4">Program Name</div>
             <div className="col-span-2">Language</div>
@@ -473,9 +283,9 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
             <div className="col-span-3 text-right pr-6">Status</div>
         </div>
 
-      <div className="divide-y divide-gray-800/50">
+      <div className="divide-y divide-[#2D283E]">
         {programs.map((program: any, index: number) => (
-          <div key={program._id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 p-3 md:p-4 md:pl-6 hover:bg-white/5 transition-colors group items-center">
+          <div key={program._id} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 p-3 md:p-4 md:pl-6 hover:bg-[#252236] transition-colors group items-center">
             
             {/* Mobile: Row 1 - Icon + Name */}
             <div className="col-span-1 md:col-span-5 flex items-center gap-3 w-full">
@@ -491,7 +301,7 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
 
             {/* Desktop: Language */}
              <div className="hidden md:block col-span-2">
-               <span className="bg-gray-800 text-gray-300 border border-gray-700 px-2.5 py-1 rounded-full text-xs font-medium">
+               <span className="bg-[#13111C] text-gray-300 border border-[#2D283E] px-2.5 py-1 rounded-full text-xs font-medium">
                     {program.language || 'English'}
                 </span>
             </div>
@@ -508,15 +318,15 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
                     <select 
                         value={program.status || 'upcoming'}
                         onChange={(e) => onStatusUpdate(program._id, e.target.value)}
-                        className={`py-1.5 pl-3 pr-8 rounded-lg text-xs font-medium bg-gray-900 border outline-none cursor-pointer appearance-none transition-colors ${
+                        className={`py-1.5 pl-3 pr-8 rounded-lg text-xs font-medium bg-[#13111C] border outline-none cursor-pointer appearance-none transition-colors ${
                             program.status === 'ongoing' ? 'text-yellow-500 border-yellow-500/50 hover:border-yellow-500' :
                             program.status === 'completed' ? 'text-green-500 border-green-500/50 hover:border-green-500' :
-                            'text-blue-500 border-blue-500/50 hover:border-blue-500'
+                            'text-purple-400 border-purple-500/50 hover:border-purple-500'
                         }`}
                     >
-                        <option value="upcoming" className="bg-gray-900 text-gray-300">Upcoming</option>
-                        <option value="ongoing" className="bg-gray-900 text-yellow-500">Ongoing</option>
-                        <option value="completed" className="bg-gray-900 text-green-500">Completed</option>
+                        <option value="upcoming" className="bg-[#13111C] text-gray-300">Upcoming</option>
+                        <option value="ongoing" className="bg-[#13111C] text-yellow-500">Ongoing</option>
+                        <option value="completed" className="bg-[#13111C] text-green-500">Completed</option>
                     </select>
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
