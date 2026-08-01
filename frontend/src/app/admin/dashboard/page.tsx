@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/api';
-import { Award, Calendar, BarChart3, TrendingUp, ChevronRight, Activity } from 'lucide-react';
+import { Award, Calendar, BarChart3, TrendingUp, Activity } from 'lucide-react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -247,26 +247,6 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gradient-to-br from-blue-900/20 to-purple-900/20 p-6 rounded-2xl border border-blue-500/20 group hover:border-blue-500/40 transition-colors cursor-pointer">
-            <h3 className="text-lg font-semibold text-blue-200 mb-2 group-hover:text-blue-100 flex items-center gap-2">
-                Manage Participants <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </h3>
-            <p className="text-sm text-blue-400/60">View and edit registered participants details.</p>
-        </div>
-        <div className="bg-gradient-to-br from-emerald-900/20 to-teal-900/20 p-6 rounded-2xl border border-emerald-500/20 group hover:border-emerald-500/40 transition-colors cursor-pointer">
-            <h3 className="text-lg font-semibold text-emerald-200 mb-2 group-hover:text-emerald-100 flex items-center gap-2">
-                Manage Teams <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </h3>
-            <p className="text-sm text-emerald-400/60">Organize teams and track their scores.</p>
-        </div>
-        <div className="bg-gradient-to-br from-amber-900/20 to-orange-900/20 p-6 rounded-2xl border border-amber-500/20 group hover:border-amber-500/40 transition-colors cursor-pointer">
-            <h3 className="text-lg font-semibold text-amber-200 mb-2 group-hover:text-amber-100 flex items-center gap-2">
-                Manage Judges <ChevronRight size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-            </h3>
-            <p className="text-sm text-amber-400/60">Assign judges to programs and competition.</p>
-        </div>
-      </div>
     </div>
   );
 }

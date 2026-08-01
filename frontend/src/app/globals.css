@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #080A12;
+  --foreground: #e2e8f0;
 }
 
 @theme inline {
@@ -10,13 +10,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
@@ -27,28 +20,27 @@ body {
 
 /* Modern Scrollbar Global */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f0d15;
+  background: #080A12;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #2d283e;
+  background: #1C2040;
   border-radius: 10px;
-  border: 2px solid #0f0d15;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3d375e;
+  background: #2a3060;
 }
 
 /* Firefox support */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2d283e #0f0d15;
+  scrollbar-color: #1C2040 #080A12;
 }
 
 /* Toast progress bar shrink animation */

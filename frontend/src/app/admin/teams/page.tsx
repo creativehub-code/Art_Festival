@@ -61,23 +61,23 @@ export default function TeamsPage() {
       {/* Header & Create Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-           <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Manage Teams</h2>
-           <p className="text-gray-400 mt-1">Create teams and track their overall standing.</p>
+           <h2 className="text-3xl font-bold text-white tracking-tight">Teams</h2>
+           <p className="text-gray-500 mt-1 text-sm">Create teams and track their overall standing.</p>
         </div>
         
-        <form onSubmit={handleSubmit} className="w-full md:w-auto p-1.5 bg-gray-900 border border-gray-800 rounded-xl flex shadow-lg">
+        <form onSubmit={handleSubmit} className="w-full md:w-auto p-1 bg-[#0F1120] border border-white/[0.07] rounded-xl flex shadow-lg">
             <div className="relative flex-1 md:w-64">
-                <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600" size={18} />
                 <input 
                     value={name} 
                     onChange={e => setName(e.target.value)} 
                     placeholder="New Team Name" 
-                    className="w-full pl-10 pr-4 py-2.5 bg-transparent text-white focus:outline-none placeholder:text-gray-600 font-medium" 
+                    className="w-full pl-10 pr-4 py-2.5 bg-transparent text-white focus:outline-none placeholder:text-gray-600 font-medium text-sm" 
                     required 
                 />
             </div>
-            <button className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 rounded-lg font-bold transition-all shadow-lg shadow-purple-900/20 flex items-center gap-2">
-                <Plus size={18} /> Add
+            <button className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 rounded-lg font-semibold transition-all shadow-lg shadow-purple-900/20 flex items-center gap-2 text-sm">
+                <Plus size={16} /> Add
             </button>
         </form>
       </div>
@@ -88,14 +88,14 @@ export default function TeamsPage() {
           <div 
             key={t._id} 
             onClick={() => { 
-              setSelectedTeam(t); // Show basic info immediately
+              setSelectedTeam(t);
               setFilterGroup('All');
               setDisplayLimit(20);
             }}
             className={`
-                group relative bg-[#1E1B2E] rounded-xl p-4 border border-[#2D283E] 
-                hover:border-purple-500/50 cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-900/10 hover:-translate-y-1
-                ${selectedTeam?._id === t._id ? 'ring-2 ring-purple-500 border-transparent bg-[#1E1B2E]/80' : ''}
+                group relative bg-[#0F1120] rounded-xl p-4 border
+                hover:border-purple-500/40 cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-900/10 hover:-translate-y-1
+                ${selectedTeam?._id === t._id ? 'ring-2 ring-purple-500/60 border-transparent' : 'border-white/[0.07]'}
             `}
           >
             {/* Background Gradient Blob */}
@@ -103,10 +103,10 @@ export default function TeamsPage() {
 
             <div className="relative z-10 flex flex-col h-full justify-between gap-3">
                 <div className="flex justify-between items-start">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center border border-gray-700 font-bold text-lg text-white shadow-inner">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-900/80 to-indigo-900/80 flex items-center justify-center border border-white/10 font-bold text-lg text-white">
                         {t.name.charAt(0)}
                     </div>
-                    <div className="px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700 text-[10px] text-gray-400 font-mono">
+                    <div className="px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.07] text-[10px] text-gray-500 font-mono">
                         #{index + 1}
                     </div>
                 </div>
@@ -118,7 +118,7 @@ export default function TeamsPage() {
                     </div>
                 </div>
 
-                <div className="pt-3 border-t border-gray-800 flex items-center justify-between mt-1">
+                <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between mt-1">
                      <span className="flex items-center gap-1.5 text-purple-400 font-bold text-sm">
                         <Trophy size={14} className="text-purple-500" />
                         {t.totalScore}
@@ -131,7 +131,7 @@ export default function TeamsPage() {
                          >
                              <Trash2 size={14} />
                          </button>
-                         <button className="p-1.5 text-gray-500 hover:text-white bg-gray-800 rounded-md">
+                         <button className="p-1.5 text-gray-500 hover:text-white bg-white/[0.06] rounded-md">
                              <ChevronRight size={14} />
                          </button>
                      </div>
@@ -140,47 +140,53 @@ export default function TeamsPage() {
           </div>
         ))}
         {teams.length === 0 && (
-            <div className="col-span-full text-center p-16 bg-[#13111C]/50 rounded-3xl border border-dashed border-gray-800 relative overflow-hidden group">
+            <div className="col-span-full text-center p-16 bg-[#0F1120]/50 rounded-3xl border border-dashed border-white/[0.07] relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-t from-purple-900/10 to-transparent pointer-events-none" />
-                <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-6 border border-gray-800 group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
+                <div className="w-20 h-20 bg-white/[0.03] rounded-full flex items-center justify-center mx-auto mb-6 border border-white/[0.07] group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
                     <Trophy size={32} className="text-purple-500" />
                 </div>
                 <h3 className="text-2xl font-bold text-white mb-2">No teams yet</h3>
-                <p className="text-gray-400 max-w-sm mx-auto">Create your first team to track points and organize participants.</p>
+                <p className="text-gray-500 max-w-sm mx-auto">Create your first team to track points and organize participants.</p>
             </div>
         )}
       </div>
 
       {/* Expanded Team Details Section */}
       {selectedTeam && (
-        <div className="mt-8 bg-[#1E1B2E] border border-[#2D283E] rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-2xl shadow-black/50 w-full max-w-[100vw] md:max-w-full">
-            {/* Header */}
-            <div className="p-6 border-b border-[#2D283E] flex flex-col md:flex-row justify-between items-start md:items-center bg-[#13111C] gap-4">
+        <div className="mt-8 bg-[#0F1120] border border-white/[0.07] rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-2xl shadow-black/60 w-full">
+            {/* Header - matches reference photo */}
+            <div className="px-6 py-5 border-b border-white/[0.06] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div className="flex items-center gap-4">
-                 <div className="w-14 h-14 rounded-2xl bg-purple-600 flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-purple-900/50">
+                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-purple-900/40 flex-shrink-0">
                      {selectedTeam.name.charAt(0)}
                  </div>
                  <div>
-                    <h2 className="text-2xl font-bold text-white mb-1">{selectedTeam.name}</h2>
-                    <div className="flex items-center gap-3 text-sm">
-                        <span className="text-gray-400 font-medium">{teamParticipants.length} Members</span>
-                        <div className="w-1 h-1 rounded-full bg-gray-600"></div>
-                        <span className="text-purple-400 font-bold">{selectedTeam.totalScore} Points</span>
+                    <h2 className="text-2xl font-bold text-white">{selectedTeam.name}</h2>
+                    <div className="flex items-center gap-3 text-sm mt-1">
+                        <span className="flex items-center gap-1.5 text-gray-400">
+                          <Users size={13} />
+                          <span>{teamParticipants.length} Members</span>
+                        </span>
+                        <div className="w-1 h-1 rounded-full bg-gray-700"></div>
+                        <span className="flex items-center gap-1.5 text-purple-400 font-semibold">
+                          <Trophy size={13} />
+                          <span>{selectedTeam.totalScore} Points</span>
+                        </span>
                     </div>
                  </div>
               </div>
 
-              <div className="flex items-center gap-4 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                {/* Modern Pills Filter */}
-                <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
+              <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                {/* Pill Filter - matches reference photo */}
+                <div className="flex bg-white/[0.04] p-1 rounded-xl border border-white/[0.06] gap-0.5">
                    {['All', 'Senior', 'Junior', 'SubJunior'].map(filter => (
                       <button
                         key={filter}
                         onClick={() => { setFilterGroup(filter); setDisplayLimit(20); }}
-                        className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                        className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
                            filterGroup === filter 
-                           ? 'bg-purple-600 text-white shadow-lg' 
-                           : 'text-gray-400 hover:text-white hover:bg-white/5'
+                           ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40' 
+                           : 'text-gray-500 hover:text-gray-300'
                         }`}
                       >
                         {filter}
@@ -190,87 +196,92 @@ export default function TeamsPage() {
 
                 <button 
                     onClick={() => setSelectedTeam(null)}
-                    className="p-2.5 bg-gray-800 hover:bg-gray-700 rounded-xl text-gray-400 hover:text-white transition-colors border border-gray-700 hover:border-gray-600"
+                    className="p-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl text-gray-500 hover:text-white transition-colors border border-white/[0.06] flex-shrink-0"
                 >
-                    <X size={20} />
+                    <X size={18} />
                 </button>
               </div>
             </div>
             
-            <div className="p-0">
-              <div className="overflow-x-auto">
-                  {/* Desktop Table View */}
-                  <table className="w-full text-left border-collapse hidden md:table">
-                    <thead className="bg-[#1A1825]">
-                      <tr className="border-b border-[#2D283E] text-gray-500 text-xs uppercase tracking-wider font-semibold">
-                        <th className="p-5 w-20">#</th>
-                        <th className="p-5 w-32">Chest No</th>
-                        <th className="p-5">Participant</th>
-                        <th className="p-5 w-40">Group</th>
-                        <th className="p-5 w-48">Programs</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#2D283E]">
-                         <>
-                          {displayedParticipants.map((p: any, index: number) => (
-                            <tr key={p._id || index} className="hover:bg-[#252236] transition-colors group cursor-pointer" onClick={() => setViewParticipant(p)}>
-                              <td className="p-5 text-gray-500 font-mono text-sm">{filteredParticipants.length - index}</td>
-                              <td className="p-5">
-                                 <div className="inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-[#13111C] border border-gray-700 text-purple-300 font-mono text-sm font-bold shadow-sm">
-                                    {p.chestNumber}
-                                 </div>
-                              </td>
-                              <td className="p-5">
-                                 <span className="font-bold text-white text-base group-hover:text-purple-300 transition-colors">{p.name}</span>
-                              </td>
-                              <td className="p-5">
-                                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-                                    p.groupId?.name === 'Senior' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                                    p.groupId?.name === 'Junior' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                                    'bg-orange-500/10 text-orange-400 border-orange-500/20'
-                                 }`}>
-                                    {p.groupId?.name || '-'}
-                                 </span>
-                              </td>
-                              <td className="p-5">
-                                 {p.programs?.length > 0 ? (
-                                    <div className="flex items-center gap-2 text-gray-400 text-sm">
-                                        <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                                        {p.programs.length} Events Registered
-                                    </div>
-                                 ) : (
-                                    <span className="text-gray-600 text-sm italic">No events</span>
-                                 )}
-                              </td>
-                            </tr>
-                          ))}
-                          {hasMoreParticipants && (
-                             <tr>
-                                <td colSpan={5} className="p-6 text-center">
-                                   <button 
-                                      onClick={() => setDisplayLimit(prev => prev + 20)}
-                                      className="px-6 py-2 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded-lg font-medium transition-colors border border-purple-500/20"
-                                   >
-                                      Load More
-                                   </button>
-                                </td>
-                             </tr>
-                          )}
-                          {filteredParticipants.length === 0 && (
-                             <tr>
-                                <td colSpan={5} className="p-16 text-center text-gray-500">
-                                   <div className="flex flex-col items-center justify-center gap-3">
-                                       <div className="p-4 rounded-full bg-[#13111C] border border-[#2D283E]">
-                                           <Users className="opacity-20" size={32} />
-                                       </div>
-                                       <p>No participants found in this group.</p>
-                                   </div>
-                                </td>
-                             </tr>
-                          )}
-                         </>
-                    </tbody>
-                  </table>
+            <div className="p-4 space-y-2">
+                  {/* Desktop - Exact card-row style from reference photo */}
+                  <div className="hidden md:block space-y-2">
+                      {displayedParticipants.map((p: any, index: number) => (
+                        <div
+                          key={p._id || index}
+                          onClick={() => setViewParticipant(p)}
+                          className="flex items-center gap-4 px-5 py-4 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer hover:border-purple-500/30 hover:bg-[#161830] transition-all duration-200 group"
+                        >
+                          {/* Chest Number Badge */}
+                          <div className="flex-shrink-0">
+                            <div className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#0F1120] border border-white/[0.1] text-purple-300 font-mono text-sm font-bold min-w-[80px] text-center">
+                              {p.chestNumber}
+                            </div>
+                          </div>
+
+                          {/* Name */}
+                          <div className="flex-1 min-w-0">
+                            <span className="font-semibold text-gray-100 group-hover:text-white transition-colors text-base truncate block">
+                              {p.name}
+                            </span>
+                          </div>
+
+                          {/* Group Badge */}
+                          <div className="flex-shrink-0">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                              p.groupId?.name === 'Senior' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                              p.groupId?.name === 'Junior' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                              'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            }`}>
+                              {p.groupId?.name || '-'}
+                            </span>
+                          </div>
+
+                          {/* Events */}
+                          <div className="flex-shrink-0 w-44">
+                            {p.programs?.length > 0 ? (
+                              <div className="flex items-center gap-2 text-gray-400 text-sm">
+                                <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+                                {p.programs.length} Events Registered
+                              </div>
+                            ) : (
+                              <span className="text-gray-600 text-sm">No events</span>
+                            )}
+                          </div>
+
+                          {/* 3-dot menu */}
+                          <div className="flex-shrink-0">
+                            <button
+                              onClick={e => e.stopPropagation()}
+                              className="p-1.5 text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] rounded-lg transition-colors"
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {hasMoreParticipants && (
+                        <div className="pt-2 text-center">
+                          <button
+                            onClick={() => setDisplayLimit(prev => prev + 20)}
+                            className="px-6 py-2 bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded-lg font-medium transition-colors border border-purple-500/20"
+                          >
+                            Load More
+                          </button>
+                        </div>
+                      )}
+                      {filteredParticipants.length === 0 && (
+                        <div className="py-16 text-center text-gray-600">
+                          <div className="flex flex-col items-center justify-center gap-3">
+                            <div className="p-4 rounded-full bg-white/[0.03] border border-white/[0.06]">
+                              <Users className="opacity-30" size={32} />
+                            </div>
+                            <p>No participants found in this group.</p>
+                          </div>
+                        </div>
+                      )}
+                  </div>
 
                   {/* Mobile Card Grid View */}
                   <div className="md:hidden flex flex-col gap-3 p-1">
@@ -331,7 +342,6 @@ export default function TeamsPage() {
                             )}
                           </>
                   </div>
-              </div>
             </div>
         </div>
       )}

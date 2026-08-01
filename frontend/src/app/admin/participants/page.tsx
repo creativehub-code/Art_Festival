@@ -309,19 +309,19 @@ export default function ParticipantsPage() {
   );
 
   return (
-    <div className="space-y-12 pb-20">
+    <div className="space-y-6 pb-20">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Manage Participants</h2>
-           <p className="text-gray-400">Register new artists, manage teams, and assign programs.</p>
+           <h2 className="text-3xl font-bold text-white tracking-tight">Participants</h2>
+           <p className="text-gray-500 text-sm mt-0.5">Register new artists, manage teams, and assign programs.</p>
         </div>
         <button 
           onClick={() => setShowCreateForm(!showCreateForm)}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-900/20 transition-all"
+          className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-3 rounded-xl font-semibold flex items-center gap-2 shadow-lg shadow-purple-900/20 transition-all text-sm"
         >
-          {showCreateForm ? <X size={20} /> : <Plus size={20} />}
+          {showCreateForm ? <X size={18} /> : <Plus size={18} />}
           {showCreateForm ? 'Close Form' : 'Add Participant'}
         </button>
       </div>
@@ -519,16 +519,16 @@ export default function ParticipantsPage() {
       )}
 
       {/* List Section Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-10">
-         <h2 className="text-2xl font-bold text-white">All Participants <span className="text-gray-500 text-base font-normal">({filteredParticipants.length})</span></h2>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4">
+         <h2 className="text-xl font-bold text-white">All Participants <span className="text-gray-600 text-sm font-normal">({filteredParticipants.length})</span></h2>
          <div className="relative w-full md:w-auto">
              <input 
                 placeholder="Search participants..." 
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-10 pr-4 py-2 rounded-lg bg-[#1E1B2E] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 w-full md:w-64 transition-all"
+                className="pl-10 pr-4 py-2 rounded-xl bg-[#0F1120] border border-white/[0.07] text-white focus:outline-none focus:border-purple-500 w-full md:w-64 transition-all text-sm"
              />
-             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
              </div>
          </div>
@@ -537,56 +537,97 @@ export default function ParticipantsPage() {
       {/* Participant List (Table) */}
       {/* Participant List (Table & Mobile Cards) */}
       {filteredParticipants.length === 0 ? (
-            <div className="col-span-full text-center p-16 bg-[#13111C]/50 rounded-3xl border border-dashed border-gray-800 relative overflow-hidden group">
+            <div className="col-span-full text-center p-16 bg-[#0F1120]/50 rounded-3xl border border-dashed border-white/[0.07] relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-t from-purple-900/10 to-transparent pointer-events-none" />
-                <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-6 border border-gray-800 group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
+                <div className="w-20 h-20 bg-white/[0.03] rounded-full flex items-center justify-center mx-auto mb-6 border border-white/[0.07] group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
                     <Users size={32} className="text-purple-500" />
                 </div>
                 <h3 className="text-2xl font-bold text-white mb-2">No participants found</h3>
-                <p className="text-gray-400 max-w-sm mx-auto">Try adding a new participant, or check your search term if you're filtering.</p>
+                <p className="text-gray-500 max-w-sm mx-auto">Try adding a new participant, or check your search term if you're filtering.</p>
             </div>
       ) : (
-       <div className="bg-[#1E1B2E] rounded-2xl border border-[#2D283E] overflow-hidden shadow-xl">
+       <div className="bg-[#0F1120] rounded-2xl border border-white/[0.07] overflow-hidden shadow-xl">
         
-        {/* Desktop Table View */}
-        <table className="w-full text-left border-collapse hidden md:table">
-          <thead>
-            <tr className="border-b border-[#2D283E] text-gray-400 bg-[#13111C]">
-              <th className="p-4 w-16 font-medium">#</th>
-              <th className="p-4 font-medium">Chest No.</th>
-              <th className="p-4 font-medium">Identity</th>
-              <th className="p-4 font-medium">Affiliation</th>
-              <th className="p-4 font-medium">Programs</th>
-              <th className="p-4 font-medium w-20"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#2D283E]">
-            {paginatedParticipants.map((p, index) => {
-              // Calculate correct absolute number based on pagination
-              const absoluteIndex = (currentPage - 1) * itemsPerPage + index;
-              const displayIndex = filteredParticipants.length - absoluteIndex; 
-              return (
-                <ParticipantRow 
-                    key={p._id}
-                    p={p}
-                    index={index}
-                    displayIndex={displayIndex}
-                    hoveredParticipant={hoveredParticipant}
-                    setHoveredParticipant={setHoveredParticipant}
-                    setViewParticipant={setViewParticipant}
-                    setSelectedParticipantForProgram={setSelectedParticipantForProgram}
-                    setShowAddProgramModal={setShowAddProgramModal}
-                    handleDelete={handleDelete}
-                />
-              );
-            })}
-             {filteredParticipants.length === 0 && (
-                <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-500">No participants found.</td>
-                </tr>
-            )}
-            </tbody>
-        </table>
+        {/* Desktop - Exact card-row style from reference photo */}
+        <div className="hidden md:block p-4 space-y-2">
+          {paginatedParticipants.map((p, index) => {
+            const absoluteIndex = (currentPage - 1) * itemsPerPage + index;
+            const displayIndex = filteredParticipants.length - absoluteIndex; 
+            return (
+              <div
+                key={p._id}
+                className="flex items-center gap-4 px-5 py-4 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer hover:border-purple-500/30 hover:bg-[#161830] transition-all duration-200 group"
+                onMouseEnter={() => setHoveredParticipant(p._id)}
+                onMouseLeave={() => setHoveredParticipant(null)}
+                onClick={() => setViewParticipant(p)}
+              >
+                {/* Chest Number Badge */}
+                <div className="flex-shrink-0">
+                  <div className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#0F1120] border border-white/[0.1] text-purple-300 font-mono text-sm font-bold min-w-[80px] text-center">
+                    {p.chestNumber}
+                  </div>
+                </div>
+
+                {/* Avatar + Name */}
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="relative w-8 h-8 flex-shrink-0">
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white">
+                      {p.name.charAt(0)}
+                    </div>
+                    <img
+                      src={`${API_BASE_URL}/participants/${p._id}/photo`}
+                      alt={p.name}
+                      loading="lazy"
+                      className="absolute inset-0 w-full h-full rounded-full object-cover"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  </div>
+                  <span className="font-semibold text-gray-100 group-hover:text-white transition-colors text-base truncate">
+                    {p.name}
+                  </span>
+                </div>
+
+                {/* Group Badge */}
+                <div className="flex-shrink-0">
+                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                    p.groupId?.name === 'Senior' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                    p.groupId?.name === 'Junior' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                    p.groupId?.name ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                    'bg-white/[0.06] text-gray-500 border-white/[0.08]'
+                  }`}>
+                    {p.groupId?.name || 'No Group'}
+                  </span>
+                </div>
+
+                {/* Events */}
+                <div className="flex-shrink-0 w-44">
+                  {p.programs?.length > 0 ? (
+                    <div className="flex items-center gap-2 text-gray-400 text-sm">
+                      <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+                      {p.programs.length} Events Registered
+                    </div>
+                  ) : (
+                    <span className="text-gray-600 text-sm">No events</span>
+                  )}
+                </div>
+
+                {/* Delete / 3-dot menu */}
+                <div className="flex-shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(p._id); }}
+                    className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {filteredParticipants.length === 0 && (
+            <div className="py-8 text-center text-gray-600">No participants found.</div>
+          )}
+        </div>
 
         {/* Mobile Card Grid View */}
         <div className="md:hidden flex flex-col gap-3 p-1 bg-[#0F0D15]">
@@ -629,27 +670,39 @@ export default function ParticipantsPage() {
         </div>
         
         {/* Pagination Controls */}
-        
-        {/* Pagination Controls */}
         {totalPages > 1 && (
-            <div className="p-4 border-t border-[#2D283E] bg-[#13111C] flex justify-between items-center">
-                <button 
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
-                >
-                    Previous
-                </button>
-                <div className="text-gray-400 text-sm">
-                    Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
+            <div className="px-5 py-4 border-t border-white/[0.04] flex justify-between items-center">
+                <span className="text-gray-600 text-sm">
+                  Showing <span className="text-gray-400">{(currentPage-1)*itemsPerPage+1}</span> to <span className="text-gray-400">{Math.min(currentPage*itemsPerPage, filteredParticipants.length)}</span> of {filteredParticipants.length} entries
+                </span>
+                <div className="flex items-center gap-2">
+                  <button 
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.06] text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.1] transition"
+                  >
+                      ‹
+                  </button>
+                  {Array.from({length: Math.min(totalPages, 5)}, (_, i) => i + 1).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition ${
+                        currentPage === page 
+                          ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40' 
+                          : 'bg-white/[0.06] text-gray-400 hover:bg-white/[0.1]'
+                      }`}
+                    >{page}</button>
+                  ))}
+                  {totalPages > 5 && <span className="text-gray-600">...</span>}
+                  <button 
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.06] text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.1] transition"
+                  >
+                      ›
+                  </button>
                 </div>
-                <button 
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
-                >
-                    Next
-                </button>
             </div>
         )}
       </div>
