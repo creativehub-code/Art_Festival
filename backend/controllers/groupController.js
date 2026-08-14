@@ -1,4 +1,6 @@
+const mongoose = require("mongoose");
 const Group = require("../models/Group");
+const sendError = require("../utils/errorResponse");
 
 const getGroups = async (req, res) => {
   try {
@@ -8,29 +10,57 @@ const getGroups = async (req, res) => {
     });
     res.json(groups);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve groups", error);
   }
 };
 
 const createGroup = async (req, res) => {
   try {
-    const group = await Group.create(req.body);
+    const { name } = req.body;
+    const group = await Group.create({ name });
     res.status(201).json(group);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, 400, "Failed to create group", error);
   }
 };
 
 const deleteGroup = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    const group = await Group.findByIdAndDelete(id);
-    if (!group) {
-      return res.status(404).json({ message: "Group not found" });
-    }
+    
+    await session.withTransaction(async () => {
+      const group = await Group.findByIdAndDelete(id, { session });
+      if (!group) {
+        throw new Error("GROUP_NOT_FOUND");
+      }
+
+      const Participant = require("../models/Participant");
+      const Program = require("../models/Program");
+
+      // 1. Remove group reference from Participants
+      await Participant.updateMany(
+        { groupId: id },
+        { $unset: { groupId: 1 } },
+        { session }
+      );
+
+      // 2. Remove group reference from Programs
+      await Program.updateMany(
+        { groupId: id },
+        { $unset: { groupId: 1 } },
+        { session }
+      );
+    });
+
     res.json({ message: "Group deleted successfully" });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    if (error.message === "GROUP_NOT_FOUND") {
+      return res.status(404).json({ message: "Group not found" });
+    }
+    sendError(res, 500, "Failed to delete group", error);
+  } finally {
+    await session.endSession();
   }
 };
 

@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Program = require("../models/Program");
 const JudgeMark = require("../models/JudgeMark");
 const JudgeGroup = require("../models/JudgeGroup");
@@ -111,15 +112,52 @@ const updateProgram = async (req, res) => {
 };
 
 const deleteProgram = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    const program = await Program.findByIdAndDelete(id);
-    if (!program) {
-      return res.status(404).json({ message: "Program not found" });
-    }
+
+    await session.withTransaction(async () => {
+      const program = await Program.findByIdAndDelete(id, { session });
+      if (!program) {
+        throw new Error("PROGRAM_NOT_FOUND");
+      }
+
+      const Participant = require("../models/Participant");
+      const ProgramResult = require("../models/ProgramResult");
+      const ConversationPair = require("../models/ConversationPair");
+
+      // 1. Remove the programId from Participant.programs using $pull
+      await Participant.updateMany(
+        { programs: id },
+        { $pull: { programs: id } },
+        { session }
+      );
+
+      // 2. Remove the programId from JudgeGroup.assignedPrograms using $pull
+      await JudgeGroup.updateMany(
+        { assignedPrograms: id },
+        { $pull: { assignedPrograms: id } },
+        { session }
+      );
+
+      // 3. Delete all JudgeMark records belonging to the program
+      await JudgeMark.deleteMany({ programId: id }, { session });
+
+      // 4. Delete all ProgramResult records belonging to the program
+      await ProgramResult.deleteMany({ programId: id }, { session });
+
+      // 5. Delete all ConversationPair records belonging to the program
+      await ConversationPair.deleteMany({ programId: id }, { session });
+    });
+
     res.json({ message: "Program deleted successfully" });
   } catch (error) {
+    if (error.message === "PROGRAM_NOT_FOUND") {
+      return res.status(404).json({ message: "Program not found" });
+    }
     res.status(500).json({ message: error.message });
+  } finally {
+    await session.endSession();
   }
 };
 

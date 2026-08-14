@@ -43,7 +43,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const fetchTeams = async () => {
     try {
       const data = await apiRequest('/teams');
-      setTeams(data);
+      setTeams(data.data || data);
     } catch (e) {
       console.error("Failed to fetch teams", e);
     }
@@ -62,7 +62,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     try {
       // Fetches lightweight list (no images)
       const data = await apiRequest('/participants');
-      setParticipants(data);
+      setParticipants(data.data || data);
     } catch (e) {
       console.error("Failed to fetch participants", e);
     }

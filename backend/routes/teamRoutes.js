@@ -9,8 +9,8 @@ const {
   deleteTeam,
 } = require("../controllers/teamController");
 
-router.route("/").get(getTeams).post(protect, restrictTo("admin"), createTeam);
+router.route("/").get(protect, getTeams).post(protect, restrictTo("admin"), createTeam);
 
-router.route("/:id").get(getTeamById).put(protect, restrictTo("admin"), updateTeam).delete(protect, restrictTo("admin"), deleteTeam);
+router.route("/:id").get(protect, getTeamById).put(protect, restrictTo("admin"), updateTeam).delete(protect, restrictTo("admin"), deleteTeam);
 
 module.exports = router;

@@ -23,6 +23,11 @@ const adminSchema = new mongoose.Schema(
       default: "admin",
       required: true,
     },
+    isInitialSetup: {
+      type: Boolean,
+      unique: true,
+      sparse: true,
+    },
     lastLogin: {
       type: Date,
     },

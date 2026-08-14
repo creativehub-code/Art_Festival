@@ -55,42 +55,37 @@ export default function IndividualMarksPage() {
 
   const [allResults, setAllResults] = useState<Record<string, any>>({});
 
-  // Fetch marks for every program in parallel
+  // Fetch marks and results in a single request (Batch Fetching)
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        const results = await Promise.all(
-          programs.map(async (prog: any) => {
-            try {
-              // Fetch marks
-              const markData = await apiRequest(`/marks/${prog._id}`);
-              const marks = (markData.marks || []).map((m: Mark) => ({
-                ...m,
-                programId: prog._id, // Keep ID for result lookups
-                programName: prog.name,
-                programGroup: prog.groupId?.name || 'N/A',
-              }));
+        const data = await apiRequest('/marks/export-data');
 
-              // Fetch official results (rankings) if completed
-              let programResults = [];
-              if (prog.status === 'completed') {
-                try {
-                  programResults = await apiRequest(`/public/results/${prog._id}`);
-                } catch { /* silence if no results yet */ }
-              }
+        // Map marks to include program details from context
+        const processedMarks = (data.allMarks || []).map((m: any) => {
+          const pId = typeof m.programId === 'object' ? m.programId._id || m.programId : m.programId;
+          const prog = programs.find((p: any) => p._id === pId) || {};
+          return {
+            ...m,
+            programId: pId, // Keep ID for result lookups
+            programName: prog.name || 'Unknown Program',
+            programGroup: prog.groupId?.name || 'N/A',
+          };
+        });
+        setAllMarks(processedMarks);
 
-              return { marks, programId: prog._id, results: programResults };
-            } catch {
-              return { marks: [], results: [] };
-            }
-          })
-        );
-        
-        setAllMarks(results.flatMap(r => r.marks));
+        // Group results by programId
         const resMap: Record<string, any> = {};
-        results.forEach(r => { if(r.programId) resMap[r.programId] = r.results; });
+        (data.allResults || []).forEach((r: any) => {
+          const pId = typeof r.programId === 'object' ? r.programId._id || r.programId : r.programId;
+          if (!resMap[pId]) resMap[pId] = [];
+          resMap[pId].push(r);
+        });
         setAllResults(resMap);
+
+      } catch (error) {
+        console.error("Failed to load export data", error);
       } finally {
         setLoading(false);
       }

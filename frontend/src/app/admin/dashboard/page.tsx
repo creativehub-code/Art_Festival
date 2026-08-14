@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Award, Calendar, BarChart3, TrendingUp, Activity } from 'lucide-react';
 import {
@@ -26,27 +26,14 @@ ChartJS.register(
 
 export default function AdminDashboard() {
   const { programs, teams, groups, participants, refreshPrograms, loading } = useAdminData();
-  const [participantCount, setParticipantCount] = useState(0);
+  const participantCount = participants?.length ?? 0;
   
   // Local state for UI
   const [selectedLanguage, setSelectedLanguage] = useState('All');
   const [isProgramsVisible, setIsProgramsVisible] = useState(true);
 
-
   const languages = ['All', 'Malayalam', 'Arabic', 'Urdu', 'English'];
 
-  useEffect(() => {
-    // Only fetch participants count locally, others from context
-    const fetchParticipantsCount = async () => {
-      try {
-        const p = await apiRequest('/participants');
-        setParticipantCount(p.length);
-      } catch (error) {
-        console.error("Failed to fetch participants", error);
-      }
-    };
-    fetchParticipantsCount();
-  }, []);
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {

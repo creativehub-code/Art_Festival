@@ -6,8 +6,10 @@ const protect = async (req, res, next) => {
   try {
     let token;
 
-    // 1) Extract token from Authorization header
-    if (
+    // 1) Extract token from cookie or Authorization header (fallback)
+    if (req.cookies && req.cookies.token) {
+      token = req.cookies.token;
+    } else if (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {

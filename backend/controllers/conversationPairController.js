@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const ConversationPair = require("../models/ConversationPair");
 const Participant = require("../models/Participant");
 const Program = require("../models/Program");
@@ -72,30 +73,48 @@ const createPair = async (req, res) => {
       });
     }
 
-    // ── 6. Create the pair record ─────────────────────────────────────────────
-    const pair = await ConversationPair.create({
-      programId,
-      participants: participantIds,
-      primaryParticipantId,
-      teamId: firstP.teamId,
-      groupId: firstP.groupId,
-    });
+    // ── 6. Create the pair record and synchronize participants ─────────────────
+    const session = await mongoose.startSession();
+    let populated;
 
-    // ── 7. Add program to all participants' programs[] without duplicates ─────
-    await Participant.updateMany(
-      { _id: { $in: participantIds } },
-      { $addToSet: { programs: programId } }
-    );
+    try {
+      await session.withTransaction(async () => {
+        const pairs = await ConversationPair.create([{
+          programId,
+          participants: participantIds,
+          primaryParticipantId,
+          teamId: firstP.teamId,
+          groupId: firstP.groupId,
+        }], { session });
 
-    // ── 8. Return populated pair ──────────────────────────────────────────────
-    const populated = await ConversationPair.findById(pair._id)
-      .populate("participants", "name chestNumber")
-      .populate("primaryParticipantId", "name chestNumber")
-      .populate("programId", "name language");
+        const pair = pairs[0];
+
+        // ── 7. Add program to all participants' programs[] without duplicates ─────
+        await Participant.updateMany(
+          { _id: { $in: participantIds } },
+          { $addToSet: { programs: programId } },
+          { session }
+        );
+
+        // ── 8. Return populated pair ──────────────────────────────────────────────
+        populated = await ConversationPair.findById(pair._id)
+          .session(session)
+          .populate("participants", "name chestNumber")
+          .populate("primaryParticipantId", "name chestNumber")
+          .populate("programId", "name language");
+      });
+    } finally {
+      await session.endSession();
+    }
 
     res.status(201).json({ message: "Conversation group registered successfully", pair: populated });
   } catch (error) {
     console.error("createPair error:", error);
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: "Conflict: One or more participants are already registered in a group/pair for this program",
+      });
+    }
     res.status(500).json({ message: error.message });
   }
 };

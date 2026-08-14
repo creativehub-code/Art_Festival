@@ -10,18 +10,19 @@ const getBaseUrl = () => {
 
 const axiosInstance = axios.create({
   baseURL: getBaseUrl(),
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Request Interceptor: Automatically attach Bearer token from localStorage
+// Request Interceptor: Attach CSRF token for state-changing requests
 axiosInstance.interceptors.request.use(
   (config) => {
     if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      const csrfToken = localStorage.getItem('csrfToken');
+      if (csrfToken && ['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
+        config.headers['x-csrf-token'] = csrfToken;
       }
     }
     return config;
@@ -35,10 +36,11 @@ axiosInstance.interceptors.request.use(
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    // If 401, clear token and redirect to login
+    // If 401, clear non-sensitive state and redirect to login
     if (error.response && error.response.status === 401) {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('role');
         // Prevent redirect loop if already on login page
         if (!window.location.pathname.startsWith('/login')) {
           window.location.href = '/login';

@@ -35,7 +35,7 @@ export default function GroupsPage() {
       {/* Header & Create Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-           <h2 className="text-3xl font-bold text-white tracking-tight">Groups</h2>
+           <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Groups</h2>
            <p className="text-gray-500 mt-1 text-sm">Organize participants into competition categories.</p>
         </div>
         

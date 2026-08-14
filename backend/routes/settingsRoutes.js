@@ -6,6 +6,6 @@ const {
   updateSettings,
 } = require("../controllers/settingsController");
 
-router.route("/").get(getSettings).put(protect, restrictTo("admin"), updateSettings);
+router.route("/").get(protect, getSettings).put(protect, restrictTo("admin"), updateSettings);
 
 module.exports = router;

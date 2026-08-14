@@ -30,10 +30,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     checkAuth();
   }, [router]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    try {
+      await apiRequest('/auth/logout', 'POST');
+    } catch (e) {
+      // Ignore errors on logout
+    }
     localStorage.removeItem('role');
     localStorage.removeItem('user');
+    localStorage.removeItem('csrfToken');
     router.push('/login');
   };
 
@@ -43,60 +48,62 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <AdminProvider>
       <div className="flex min-h-screen bg-[#080A12] text-white font-sans pb-20 md:pb-0 overflow-x-hidden">
         
-        {/* Toggle Button explicitly when closed */}
-        <div className={`hidden md:flex fixed top-6 left-6 z-40 transition-opacity duration-300 ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-          <button 
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 bg-[#12152A]/80 border border-white/10 rounded-lg text-gray-400 hover:text-white backdrop-blur-xl transition hover:bg-[#1C2040] shadow-lg"
-          >
-            <PanelLeftOpen size={24} />
-          </button>
-        </div>
-
         {/* Sidebar - Hidden on Mobile, togglable on desktop */}
-        <aside className={`hidden md:flex w-64 bg-[#0D0F1E] border-r border-white/[0.06] flex-col fixed h-full z-50 transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`hidden md:flex bg-[#0D0F1E] border-r border-white/[0.06] flex-col fixed h-full z-50 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
           
           {/* App Header */}
-          <div className="px-6 pt-7 pb-6 flex items-center justify-between border-b border-white/[0.06]">
-            <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Admin Panel</h2>
-              <p className="text-xs text-gray-500 mt-0.5 font-medium">Art Festival Admin</p>
-            </div>
+          <div className={`pt-7 pb-6 flex items-center border-b border-white/[0.06] ${isSidebarOpen ? 'px-6 justify-between' : 'px-0 justify-center'}`}>
+            {isSidebarOpen && (
+              <div className="overflow-hidden transition-all duration-300 whitespace-nowrap">
+                <h2 className="text-xl font-bold text-white tracking-tight">Admin Panel</h2>
+                <p className="text-xs text-gray-500 mt-0.5 font-medium">Art Festival Admin</p>
+              </div>
+            )}
             <button 
-              onClick={() => setIsSidebarOpen(false)} 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
               className="text-gray-600 hover:text-gray-400 transition p-1 hover:bg-white/5 rounded-md"
             >
-              <PanelLeftClose size={20} />
+              {isSidebarOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
             </button>
           </div>
           
           {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
-            <NavLink href="/admin/dashboard" icon={<LayoutGrid size={18}/>}>Dashboard</NavLink>
-            <NavLink href="/admin/participants" icon={<Users size={18}/>}>Participants</NavLink>
-            <NavLink href="/admin/teams" icon={<Shield size={18}/>}>Teams</NavLink>
-            <NavLink href="/admin/groups" icon={<UsersRound size={18}/>}>Groups</NavLink>
-            <NavLink href="/admin/programs" icon={<BookOpen size={18}/>}>Programs</NavLink>
-            <NavLink href="/admin/judges" icon={<Gavel size={18}/>}>Judges</NavLink>
-            <NavLink href="/admin/marks" icon={<CheckSquare size={18}/>}>Review Marks</NavLink>
-            <NavLink href="/admin/export" icon={<BarChart3 size={18}/>}>Individual Marks</NavLink>
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto no-scrollbar">
+            <NavLink href="/admin/dashboard" icon={<LayoutGrid size={18}/>} isSidebarOpen={isSidebarOpen}>Dashboard</NavLink>
+            <NavLink href="/admin/participants" icon={<Users size={18}/>} isSidebarOpen={isSidebarOpen}>Participants</NavLink>
+            <NavLink href="/admin/teams" icon={<Shield size={18}/>} isSidebarOpen={isSidebarOpen}>Teams</NavLink>
+            <NavLink href="/admin/groups" icon={<UsersRound size={18}/>} isSidebarOpen={isSidebarOpen}>Groups</NavLink>
+            <NavLink href="/admin/programs" icon={<BookOpen size={18}/>} isSidebarOpen={isSidebarOpen}>Programs</NavLink>
+            <NavLink href="/admin/judges" icon={<Gavel size={18}/>} isSidebarOpen={isSidebarOpen}>Judges</NavLink>
+            <NavLink href="/admin/marks" icon={<CheckSquare size={18}/>} isSidebarOpen={isSidebarOpen}>Review Marks</NavLink>
+            <NavLink href="/admin/export" icon={<BarChart3 size={18}/>} isSidebarOpen={isSidebarOpen}>Individual Marks</NavLink>
           </nav>
 
           {/* Bottom actions */}
           <div className="px-3 pb-4 pt-2 border-t border-white/[0.06] space-y-2">
             <Link
               href="/admin/participants"
-              className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm transition-all shadow-lg shadow-purple-900/30 hover:shadow-purple-900/50"
+              className={`flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm transition-all shadow-lg shadow-purple-900/30 hover:shadow-purple-900/50 group relative ${isSidebarOpen ? 'px-4' : 'px-0'}`}
             >
               <Plus size={16} />
-              Create New
+              {isSidebarOpen && <span>Create New</span>}
+              {!isSidebarOpen && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-50 shadow-xl">
+                  Create New
+                </div>
+              )}
             </Link>
             <button 
               onClick={handleLogout} 
-              className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition text-gray-500 text-sm font-medium"
+              className={`flex items-center gap-3 w-full p-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition text-gray-500 text-sm font-medium group relative ${isSidebarOpen ? '' : 'justify-center'}`}
             >
               <LogOut size={18} />
-              Logout
+              {isSidebarOpen && <span>Logout</span>}
+              {!isSidebarOpen && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-50 shadow-xl">
+                  Logout
+                </div>
+              )}
             </button>
           </div>
         </aside>
@@ -118,7 +125,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* Main Content - Adjusted Margin */}
-        <main className={`flex-1 transition-all duration-300 p-2 md:p-8 ${isSidebarOpen ? 'md:ml-64' : 'md:ml-0'}`}>
+        <main className={`flex-1 transition-all duration-300 p-2 md:p-8 ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
           {children}
         </main>
       </div>
@@ -126,18 +133,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   );
 }
 
-function NavLink({ href, icon, children }: { href: string; icon: React.ReactNode; children: React.ReactNode }) {
+function NavLink({ href, icon, children, isSidebarOpen }: { href: string; icon: React.ReactNode; children: React.ReactNode; isSidebarOpen: boolean }) {
   const pathname = usePathname();
   const isActive = pathname === href;
 
   return (
     <Link 
       href={href} 
-      className={`relative flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group text-sm font-medium ${
+      className={`relative flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 group text-sm font-medium ${
         isActive 
           ? 'bg-[#1C1F35] text-white shadow-sm' 
           : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
-      }`}
+      } ${isSidebarOpen ? 'px-4' : 'px-0 justify-center'}`}
     >
       {/* Active left accent */}
       {isActive && (
@@ -147,11 +154,23 @@ function NavLink({ href, icon, children }: { href: string; icon: React.ReactNode
       <span className={`transition-colors duration-200 ${isActive ? 'text-purple-400' : 'text-gray-600 group-hover:text-gray-400'}`}>
         {icon}
       </span>
-      <span className="tracking-wide">{children}</span>
+      {isSidebarOpen && (
+        <span className="tracking-wide">{children}</span>
+      )}
       
       {/* Active dot */}
-      {isActive && (
+      {isActive && isSidebarOpen && (
          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-purple-500" />
+      )}
+      {isActive && !isSidebarOpen && (
+         <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-purple-500" />
+      )}
+
+      {/* Tooltip */}
+      {!isSidebarOpen && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-50 shadow-xl">
+          {children}
+        </div>
       )}
     </Link>
   );

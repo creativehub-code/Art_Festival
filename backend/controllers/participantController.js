@@ -1,6 +1,12 @@
+const mongoose = require("mongoose");
 const Participant = require("../models/Participant");
 const Team = require("../models/Team");
 const Group = require("../models/Group");
+const sendError = require("../utils/errorResponse");
+
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // @desc    Search for eligible co-participants for a conversation program
 // @route   GET /api/participants/search-eligible?q=<name|chestNo>&primaryId=<id>
@@ -28,11 +34,12 @@ const searchEligible = async (req, res) => {
     }
 
     // Build an OR query on name or chestNumber — case-insensitive
+    const safeQuery = escapeRegex(q);
     const searchFilter = q
       ? {
           $or: [
-            { name: { $regex: q, $options: "i" } },
-            { chestNumber: { $regex: q, $options: "i" } },
+            { name: { $regex: safeQuery, $options: "i" } },
+            { chestNumber: { $regex: safeQuery, $options: "i" } },
           ],
         }
       : {};
@@ -50,27 +57,33 @@ const searchEligible = async (req, res) => {
 
     res.json(eligible);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to search eligible participants", error);
   }
 };
 
-// @desc    Get all participants
-// @route   GET /api/participants
-// @access  Public (Read-only), Admin/Judge (Read-only)
 // @desc    Get all participants (Lightweight - No Image)
 // @route   GET /api/participants
 // @access  Public (Read-only), Admin/Judge (Read-only)
 const getParticipants = async (req, res) => {
   try {
-    const participants = await Participant.find()
-      .select("-image") // Exclude image for performance
-      .populate("teamId", "name")
-      .populate("groupId", "name")
-      .populate("programs", "name language")
-      .sort({ createdAt: -1 });
-    res.json(participants);
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const skip = (page - 1) * limit;
+
+    const [participants, total] = await Promise.all([
+      Participant.find()
+        .select("-image")
+        .populate("teamId", "name")
+        .populate("groupId", "name")
+        .populate("programs", "name language")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Participant.countDocuments()
+    ]);
+    res.json({ data: participants, total, page, pages: Math.ceil(total / limit) });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve participants", error);
   }
 };
 
@@ -101,7 +114,7 @@ const getParticipantsByLanguage = async (req, res) => {
 
     res.json(participants);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve participants by language", error);
   }
 };
 
@@ -121,7 +134,7 @@ const getParticipantById = async (req, res) => {
     }
     res.json(participant);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve participant", error);
   }
 };
 
@@ -154,7 +167,7 @@ const getParticipantPhoto = async (req, res) => {
     });
     res.end(buffer);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve participant photo", error);
   }
 };
 
@@ -162,6 +175,7 @@ const getParticipantPhoto = async (req, res) => {
 // @route   POST /api/participants
 // @access  Admin
 const createParticipant = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { name, chestNumber, teamId, groupId, programs } = req.body;
 
@@ -172,30 +186,38 @@ const createParticipant = async (req, res) => {
         .json({ message: "Participant with this chest number already exists" });
     }
 
-    const participant = await Participant.create({
-      name,
-      chestNumber,
-      teamId,
-      groupId,
-      programs: programs || [],
-      image: req.body.image || "",
+    let participant;
+
+    await session.withTransaction(async () => {
+      const newParticipant = new Participant({
+        name,
+        chestNumber,
+        teamId,
+        groupId,
+        programs: programs || [],
+        image: req.body.image || "",
+      });
+      
+      participant = await newParticipant.save({ session });
+
+      if (teamId) {
+        await Team.findByIdAndUpdate(teamId, {
+          $push: { participantIds: participant._id },
+        }, { session });
+      }
+
+      if (groupId) {
+        await Group.findByIdAndUpdate(groupId, {
+          $push: { participantIds: participant._id },
+        }, { session });
+      }
     });
-
-    if (teamId) {
-      await Team.findByIdAndUpdate(teamId, {
-        $push: { participantIds: participant._id },
-      });
-    }
-
-    if (groupId) {
-      await Group.findByIdAndUpdate(groupId, {
-        $push: { participantIds: participant._id },
-      });
-    }
 
     res.status(201).json(participant);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, 400, "Failed to create participant", error);
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -203,6 +225,7 @@ const createParticipant = async (req, res) => {
 // @route   PUT /api/participants/:id
 // @access  Admin
 const updateParticipant = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const participant = await Participant.findById(req.params.id);
 
@@ -220,15 +243,62 @@ const updateParticipant = async (req, res) => {
     if (programs !== undefined) updateData.programs = programs;
     if (image !== undefined) updateData.image = image;
 
-    const updatedParticipant = await Participant.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true },
-    );
+    const oldTeamId = participant.teamId?.toString();
+    const newTeamId = updateData.teamId;
+    const teamChanged = updateData.teamId !== undefined && String(newTeamId) !== String(oldTeamId);
+
+    const oldGroupId = participant.groupId?.toString();
+    const newGroupId = updateData.groupId;
+    const groupChanged = updateData.groupId !== undefined && String(newGroupId) !== String(oldGroupId);
+
+    let updatedParticipant;
+
+    await session.withTransaction(async () => {
+      updatedParticipant = await Participant.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true, session },
+      );
+
+      if (!updatedParticipant) {
+        throw new Error("PARTICIPANT_NOT_FOUND");
+      }
+
+      if (teamChanged) {
+        if (oldTeamId) {
+          await Team.findByIdAndUpdate(oldTeamId, {
+            $pull: { participantIds: participant._id },
+          }, { session });
+        }
+        if (newTeamId) {
+          await Team.findByIdAndUpdate(newTeamId, {
+            $addToSet: { participantIds: participant._id },
+          }, { session });
+        }
+      }
+
+      if (groupChanged) {
+        if (oldGroupId) {
+          await Group.findByIdAndUpdate(oldGroupId, {
+            $pull: { participantIds: participant._id },
+          }, { session });
+        }
+        if (newGroupId) {
+          await Group.findByIdAndUpdate(newGroupId, {
+            $addToSet: { participantIds: participant._id },
+          }, { session });
+        }
+      }
+    });
 
     res.json(updatedParticipant);
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    if (error.message === "PARTICIPANT_NOT_FOUND") {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+    sendError(res, 400, "Failed to update participant", error);
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -236,29 +306,38 @@ const updateParticipant = async (req, res) => {
 // @route   DELETE /api/participants/:id
 // @access  Admin
 const deleteParticipant = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
-    const participant = await Participant.findByIdAndDelete(id);
 
-    if (!participant) {
-      return res.status(404).json({ message: "Participant not found" });
-    }
+    await session.withTransaction(async () => {
+      const participant = await Participant.findByIdAndDelete(id, { session });
 
-    if (participant.teamId) {
-      await Team.findByIdAndUpdate(participant.teamId, {
-        $pull: { participantIds: participant._id },
-      });
-    }
+      if (!participant) {
+        throw new Error("PARTICIPANT_NOT_FOUND");
+      }
 
-    if (participant.groupId) {
-      await Group.findByIdAndUpdate(participant.groupId, {
-        $pull: { participantIds: participant._id },
-      });
-    }
+      if (participant.teamId) {
+        await Team.findByIdAndUpdate(participant.teamId, {
+          $pull: { participantIds: participant._id },
+        }, { session });
+      }
+
+      if (participant.groupId) {
+        await Group.findByIdAndUpdate(participant.groupId, {
+          $pull: { participantIds: participant._id },
+        }, { session });
+      }
+    });
 
     res.json({ message: "Participant removed" });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    if (error.message === "PARTICIPANT_NOT_FOUND") {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+    sendError(res, 500, "Failed to delete participant", error);
+  } finally {
+    await session.endSession();
   }
 };
 

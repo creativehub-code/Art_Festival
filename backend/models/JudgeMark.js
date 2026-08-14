@@ -20,6 +20,7 @@ const judgeMarkSchema = new mongoose.Schema(
     marksGiven: {
       type: Number,
       required: true,
+      min: 0,
     },
     submitted: {
       type: Boolean,
@@ -30,5 +31,7 @@ const judgeMarkSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+judgeMarkSchema.index({ judgeId: 1, programId: 1, participantId: 1 }, { unique: true });
 
 module.exports = mongoose.model("JudgeMark", judgeMarkSchema);

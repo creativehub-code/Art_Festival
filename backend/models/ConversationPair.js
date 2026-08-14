@@ -38,4 +38,7 @@ const conversationPairSchema = new mongoose.Schema(
   }
 );
 
+// Ensure a participant can only be in one ConversationPair per program
+conversationPairSchema.index({ programId: 1, participants: 1 }, { unique: true });
+
 module.exports = mongoose.model("ConversationPair", conversationPairSchema);

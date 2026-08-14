@@ -314,7 +314,7 @@ export default function ParticipantsPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h2 className="text-3xl font-bold text-white tracking-tight">Participants</h2>
+           <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Participants</h2>
            <p className="text-gray-500 text-sm mt-0.5">Register new artists, manage teams, and assign programs.</p>
         </div>
         <button 

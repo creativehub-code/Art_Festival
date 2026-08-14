@@ -16,15 +16,15 @@ const {
 // Since we don't have middleware protecting routes yet, we'll just define endpoints.
 // TODO: Add auth middleware for POST/PUT/DELETE
 
-router.route("/by-language").get(getParticipantsByLanguage);
-router.route("/:id/photo").get(getParticipantPhoto);
+router.route("/by-language").get(protect, getParticipantsByLanguage);
+router.route("/:id/photo").get(protect, getParticipantPhoto);
 // Eligible co-participant search for conversation programs — must be before /:id
 router.get("/search-eligible", protect, restrictTo("admin"), searchEligible);
-router.route("/").get(getParticipants).post(protect, restrictTo("admin"), createParticipant);
+router.route("/").get(protect, getParticipants).post(protect, restrictTo("admin"), createParticipant);
 
 router
   .route("/:id")
-  .get(getParticipantById)
+  .get(protect, getParticipantById)
   .put(protect, restrictTo("admin"), updateParticipant)
   .delete(protect, restrictTo("admin"), deleteParticipant);
 

@@ -7,9 +7,11 @@ const {
   calculateScores,
   exportToGoogleSheets,
   streamMarks,
+  getAllExportData,
 } = require("../controllers/markController");
 
 router.post("/", protect, restrictTo("admin", "judge"), submitMark);
+router.get("/export-data", protect, restrictTo("admin"), getAllExportData);
 // SSE stream route MUST be declared before /:programId to avoid route conflict
 router.get("/stream/:programId", protect, restrictTo("admin"), streamMarks);
 router.get("/:programId", protect, restrictTo("admin", "judge"), getMarksByProgram);

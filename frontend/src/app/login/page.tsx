@@ -18,16 +18,25 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
-      // Send as 'email' — backend handles both email and username lookups
-      const data = await apiRequest('/auth/login', 'POST', { email: identifier, password });
-      
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('role', data.role);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      // 1. Fetch CSRF Token first
+      const csrfRes = await apiRequest('/csrf-token', 'GET');
+      if (csrfRes && csrfRes.csrfToken) {
+        localStorage.setItem('csrfToken', csrfRes.csrfToken);
+      }
 
-      if (data.role === 'admin') {
+      // 2. Login (Backend sets HttpOnly cookie for auth)
+      // Send as 'email' — backend handles both email and username lookups
+      await apiRequest('/auth/login', 'POST', { email: identifier, password });
+      
+      // 3. Get authenticated user details
+      const authData = await apiRequest('/auth/me', 'GET');
+      
+      localStorage.setItem('role', authData.role);
+      localStorage.setItem('user', JSON.stringify(authData.user));
+
+      if (authData.role === 'admin') {
         router.push('/admin/dashboard');
-      } else if (data.role === 'judge') {
+      } else if (authData.role === 'judge') {
         router.push('/judge/dashboard');
       } else {
         router.push('/');

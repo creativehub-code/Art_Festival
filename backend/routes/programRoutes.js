@@ -8,7 +8,7 @@ const {
   deleteProgram,
 } = require("../controllers/programController");
 
-router.route("/").get(getPrograms).post(protect, restrictTo("admin"), createProgram);
+router.route("/").get(protect, getPrograms).post(protect, restrictTo("admin"), createProgram);
 router.route("/:id").patch(protect, restrictTo("admin"), updateProgram).delete(protect, restrictTo("admin"), deleteProgram);
 
 module.exports = router;

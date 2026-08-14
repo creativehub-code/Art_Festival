@@ -391,49 +391,40 @@ export default function MarksReviewPage() {
                 <div className="flex flex-wrap items-center gap-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block ml-1">Category</label>
-                        <div className="flex gap-2 p-1 bg-[#13111C] rounded-xl border border-gray-800 w-fit">
-                            <button
-                                onClick={() => setSelectedFilterGroup('All')}
-                                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                    selectedFilterGroup === 'All' 
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
-                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                }`}
+                        <div className="relative">
+                            <select
+                                value={selectedFilterGroup}
+                                onChange={(e) => setSelectedFilterGroup(e.target.value)}
+                                className="appearance-none bg-[#13111C] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-4 pr-10 py-2 text-sm font-bold w-full min-w-[160px] focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
                             >
-                                All
-                            </button>
-                            {groups.map(g => (
-                                <button
-                                    key={g._id}
-                                    onClick={() => setSelectedFilterGroup(g._id)}
-                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                        selectedFilterGroup === g._id 
-                                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' 
-                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                    }`}
-                                >
-                                    {g.name}
-                                </button>
-                            ))}
+                                <option value="All">All Categories</option>
+                                {groups.map(g => (
+                                    <option key={g._id} value={g._id}>{g.name}</option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                                <ChevronDown size={16} />
+                            </div>
                         </div>
                     </div>
 
                     <div className="space-y-2">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block ml-1">Language</label>
-                        <div className="flex gap-2 p-1 bg-[#13111C] rounded-xl border border-gray-800 w-fit">
-                            {languages.map(lang => (
-                                <button
-                                    key={lang}
-                                    onClick={() => { setSelectedFilterLang(lang); }}
-                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                        selectedFilterLang === lang 
-                                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' 
-                                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                                    }`}
-                                >
-                                    {lang}
-                                </button>
-                            ))}
+                        <div className="relative">
+                            <select
+                                value={selectedFilterLang}
+                                onChange={(e) => setSelectedFilterLang(e.target.value)}
+                                className="appearance-none bg-[#13111C] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-4 pr-10 py-2 text-sm font-bold w-full min-w-[160px] focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
+                            >
+                                {languages.map(lang => (
+                                    <option key={lang} value={lang}>
+                                        {lang === 'All' ? 'All Languages' : lang}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                                <ChevronDown size={16} />
+                            </div>
                         </div>
                     </div>
 

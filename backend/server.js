@@ -5,6 +5,8 @@ const rateLimit = require("express-rate-limit");
 const mongoSanitize = require("express-mongo-sanitize");
 const dotenv = require("dotenv");
 const mongoose = require("mongoose");
+const cookieParser = require("cookie-parser");
+const { setCsrfToken, validateCsrf } = require("./middleware/csrfMiddleware");
 
 const connectDB = require("./config/db");
 
@@ -48,14 +50,17 @@ const writeLimiter = rateLimit({
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3000",
-  "https://musabaqa-app.vercel.app",
 ].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
-      if (!origin) return callback(null, true);
+      if (!origin) {
+        if (process.env.NODE_ENV === 'production') {
+          return callback(new Error("Origin header required in production"));
+        }
+        return callback(null, true);
+      }
       if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -67,6 +72,15 @@ app.use(
 );
 
 app.use(express.json({ limit: "5mb" }));
+
+// Parse cookies before CSRF middleware
+app.use(cookieParser());
+
+// Anti-CSRF Token Generation Route
+app.get("/api/csrf-token", setCsrfToken);
+
+// Validate CSRF on all state-changing requests globally
+app.use(validateCsrf);
 
 // Security Middlewares
 app.use(helmet());

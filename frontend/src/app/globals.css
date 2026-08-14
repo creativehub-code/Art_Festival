@@ -43,6 +43,15 @@ body {
   scrollbar-color: #1C2040 #080A12;
 }
 
+/* Hide scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Toast progress bar shrink animation */
 @keyframes shrink {
   from { width: 100%; }

@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const JudgeMark = require("../models/JudgeMark");
 const JudgeGroup = require("../models/JudgeGroup");
 const Participant = require("../models/Participant");
@@ -9,6 +10,7 @@ const ProgramResult = require("../models/ProgramResult");
 const ConversationPair = require("../models/ConversationPair");
 const { updateGoogleSheet } = require("../utils/googleSheets");
 const sseManager = require("../utils/sseManager");
+const sendError = require("../utils/errorResponse");
 
 // @desc    Submit or Updates marks (Judge)
 // @route   POST /api/marks
@@ -23,6 +25,40 @@ const submitMark = async (req, res) => {
 
     if (!programId || !participantId) {
       return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    const program = await Program.findById(programId).select("name language maxMarks");
+    if (!program) {
+      return res.status(404).json({ message: "Program not found" });
+    }
+
+    if (marksGiven === undefined || marksGiven === null) {
+      return res.status(400).json({ message: "Marks must be provided." });
+    }
+    
+    if (typeof marksGiven !== "number" && typeof marksGiven !== "string") {
+      return res.status(400).json({ message: "Invalid marks format. Must be a number." });
+    }
+    
+    if (typeof marksGiven === "string" && marksGiven.trim() === "") {
+      return res.status(400).json({ message: "Marks cannot be empty." });
+    }
+
+    const marks = Number(marksGiven);
+    if (isNaN(marks) || marks < 0 || marks > program.maxMarks) {
+      return res.status(400).json({ 
+        message: `Marks must be between 0 and ${program.maxMarks}` 
+      });
+    }
+
+    const participant = await Participant.findById(participantId);
+    if (!participant) {
+      return res.status(404).json({ message: "Participant not found" });
+    }
+    if (!participant.programs.some(p => p.toString() === programId.toString())) {
+      return res.status(400).json({ 
+        message: "This participant is not registered for this program." 
+      });
     }
 
     // ── SECURITY PATCH: IDOR / Broken Access Control Fix ─────────────────────────
@@ -41,23 +77,27 @@ const submitMark = async (req, res) => {
     }
     // ─────────────────────────────────────────────────────────────────────────────
 
-    let markEntry = await JudgeMark.findOne({
-      judgeId,
-      programId,
-      participantId,
-    });
-
-    if (markEntry) {
-      markEntry.marksGiven = marksGiven;
-      await markEntry.save();
-    } else {
+    // ── SECURITY PATCH: Strictly One Submission Per Judge Per Participant ──────
+    // Use JudgeMark.create() which relies on the MongoDB unique compound index 
+    // to atomically guarantee that no duplicate records can be created, even 
+    // during concurrent race conditions. Second submissions are rejected entirely.
+    let markEntry;
+    try {
       markEntry = await JudgeMark.create({
         judgeId,
         programId,
         participantId,
-        marksGiven,
+        marksGiven: marks,
       });
+    } catch (dbError) {
+      if (dbError.code === 11000) {
+        return res.status(409).json({
+          message: "Conflict: You have already submitted marks for this participant.",
+        });
+      }
+      throw dbError; // Re-throw other errors to the main catch block
     }
+    // ─────────────────────────────────────────────────────────────────────────────
 
     // Populate for the SSE broadcast so the admin table can immediately render
     // judge name and participant details without a separate fetch.
@@ -65,8 +105,7 @@ const submitMark = async (req, res) => {
       .populate({ path: "participantId", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
       .populate("judgeId", "name");
 
-    // Fetch program metadata for the admin toast notification.
-    const program = await Program.findById(programId).select("name language");
+    // Program metadata for the admin toast notification was already fetched above.
 
     // Build the broadcast payload: the mark data + a _notification block for the toast.
     // The underscore prefix signals to the frontend that this field is UI-only metadata.
@@ -98,7 +137,7 @@ const submitMark = async (req, res) => {
       const mirroringPromises = otherMemberIds.map(memberId => 
         JudgeMark.findOneAndUpdate(
           { judgeId, programId, participantId: memberId },
-          { marksGiven, submitted: false },
+          { marksGiven: marks, submitted: false },
           { upsert: true, new: true }
         )
       );
@@ -108,7 +147,7 @@ const submitMark = async (req, res) => {
 
     res.json(markEntry);
   } catch (error) {
-    res.status(400).json({ message: "Error submitting mark" });
+    sendError(res, 400, "Error submitting mark", error);
   }
 };
 
@@ -117,6 +156,21 @@ const submitMark = async (req, res) => {
 const getMarksByProgram = async (req, res) => {
   try {
     const { programId } = req.params;
+
+    // ── SECURITY PATCH: IDOR / Broken Access Control Fix ─────────────────────────
+    if (req.user && req.user.role === "judge") {
+      const assignedGroup = await JudgeGroup.findOne({
+        judges: req.user.id,
+        assignedPrograms: programId,
+      });
+
+      if (!assignedGroup) {
+        return res.status(403).json({
+          message: "Unauthorized: You are not assigned to view marks for this program.",
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
 
     // 1. Get all submitted marks for this program
     const marks = await JudgeMark.find({ programId })
@@ -153,146 +207,157 @@ const getMarksByProgram = async (req, res) => {
       assignedJudges
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve marks", error);
   }
 };
 
 // @desc    Calculate Scores and Update Totals (Admin Trigger)
 // @route   POST /api/marks/calculate/:programId
 const calculateScores = async (req, res) => {
+  const { programId } = req.params;
+  const session = await mongoose.startSession();
+
   try {
-    const { programId } = req.params;
+    let responseData = null;
 
-    // 1. Get all marks for this program
-    const marks = await JudgeMark.find({ programId });
+    await session.withTransaction(async () => {
+      // 1. Get all marks for this program
+      const marks = await JudgeMark.find({ programId }).session(session);
 
-    if (marks.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "No marks found for this program to verify." });
-    }
+      if (marks.length === 0) {
+        throw new Error("NO_MARKS_FOUND");
+      }
 
-    // 2. Clear old program results for this program if re-verifying
-    await ProgramResult.deleteMany({ programId });
+      // 2. Clear old program results for this program if re-verifying
+      await ProgramResult.deleteMany({ programId }, { session });
 
-    // 3. Aggregate marks for each participant in THIS program
-    const programScores = {};
-    marks.forEach((mark) => {
-      const pId = mark.participantId.toString();
-      if (!programScores[pId]) programScores[pId] = 0;
-      programScores[pId] += mark.marksGiven || 0;
-    });
+      // 3. Aggregate marks for each participant in THIS program
+      const programScores = {};
+      marks.forEach((mark) => {
+        const pId = mark.participantId.toString();
+        if (!programScores[pId]) programScores[pId] = 0;
+        programScores[pId] += mark.marksGiven || 0;
+      });
 
-    // 4. Sort participants by total marks in descending order
-    const sortedParticipants = Object.keys(programScores).sort(
-      (a, b) => programScores[b] - programScores[a],
-    );
+      // 4. Sort participants by total marks in descending order
+      const sortedParticipants = Object.keys(programScores).sort(
+        (a, b) => programScores[b] - programScores[a],
+      );
 
-    // 5. Fetch Points Settings
-    let settings = await Setting.findOne();
-    if (!settings) {
-      settings = {
-        firstPlacePoints: 5,
-        secondPlacePoints: 3,
-        thirdPlacePoints: 1,
-      };
-    }
+      // 5. Fetch Points Settings
+      let settings = await Setting.findOne().session(session);
+      if (!settings) {
+        settings = {
+          firstPlacePoints: 5,
+          secondPlacePoints: 3,
+          thirdPlacePoints: 1,
+        };
+      }
 
-    // 6. Assign Positions and Points (Handling exact ties)
-    const positionAwards = [];
-    let currentPosition = 1;
-    let rankPoints = settings.firstPlacePoints;
+      // 6. Assign Positions and Points (Handling exact ties)
+      const positionAwards = [];
+      let currentPosition = 1;
+      let rankPoints = settings.firstPlacePoints;
 
-    for (let i = 0; i < sortedParticipants.length; i++) {
-      const pId = sortedParticipants[i];
-      const currentScore = programScores[pId];
+      for (let i = 0; i < sortedParticipants.length; i++) {
+        const pId = sortedParticipants[i];
+        const currentScore = programScores[pId];
 
-      // Change position only if score is less than the previous person
-      if (i > 0) {
-        const prevPId = sortedParticipants[i - 1];
-        if (currentScore < programScores[prevPId]) {
-          currentPosition++; // Dense rank (e.g., 1, 1, 2, 3)
+        // Change position only if score is less than the previous person
+        if (i > 0) {
+          const prevPId = sortedParticipants[i - 1];
+          if (currentScore < programScores[prevPId]) {
+            currentPosition++; // Dense rank (e.g., 1, 1, 2, 3)
+          }
+        }
+
+        // Only top 3 true positions get points
+        if (currentPosition === 1) rankPoints = settings.firstPlacePoints;
+        else if (currentPosition === 2) rankPoints = settings.secondPlacePoints;
+        else if (currentPosition === 3) rankPoints = settings.thirdPlacePoints;
+        else rankPoints = 0;
+
+        if (rankPoints > 0) {
+          positionAwards.push({
+            programId,
+            participantId: pId,
+            position: currentPosition,
+            positionPoints: rankPoints,
+          });
         }
       }
 
-      // Only top 3 true positions get points
-      if (currentPosition === 1) rankPoints = settings.firstPlacePoints;
-      else if (currentPosition === 2) rankPoints = settings.secondPlacePoints;
-      else if (currentPosition === 3) rankPoints = settings.thirdPlacePoints;
-      else rankPoints = 0;
-
-      if (rankPoints > 0) {
-        positionAwards.push({
-          programId,
-          participantId: pId,
-          position: currentPosition,
-          positionPoints: rankPoints,
-        });
+      // Save the new program results
+      if (positionAwards.length > 0) {
+        await ProgramResult.insertMany(positionAwards, { session });
       }
-    }
 
-    // Save the new program results
-    if (positionAwards.length > 0) {
-      await ProgramResult.insertMany(positionAwards);
-    }
+      // 7. Global Recalculation: Update totalScore for each affected participant
+      // TotalScore = Sum of ALL Position Points (Judges marks are only for ranking)
+      const affectedParticipantIds = [
+        ...new Set(marks.map((mark) => mark.participantId.toString())),
+      ];
+      const affectedTeamIds = new Set();
 
-    // 7. Global Recalculation: Update totalScore for each affected participant
-    // TotalScore = Sum of ALL Position Points (Judges marks are only for ranking)
-    const affectedParticipantIds = [
-      ...new Set(marks.map((mark) => mark.participantId.toString())),
-    ];
-    const affectedTeamIds = new Set();
+      for (const partId of affectedParticipantIds) {
+        const allResults = await ProgramResult.find({ participantId: partId }).session(session);
+        const totalPositionScore = allResults.reduce(
+          (sum, r) => sum + (r.positionPoints || 0),
+          0,
+        );
 
-    for (const partId of affectedParticipantIds) {
-      const allResults = await ProgramResult.find({ participantId: partId });
-      const totalPositionScore = allResults.reduce(
-        (sum, r) => sum + (r.positionPoints || 0),
-        0,
-      );
+        const finalScore = totalPositionScore;
 
-      const finalScore = totalPositionScore;
+        // Update Participant
+        const updatedParticipant = await Participant.findByIdAndUpdate(
+          partId,
+          { totalScore: finalScore },
+          { new: true, session },
+        );
 
-      // Update Participant
-      const updatedParticipant = await Participant.findByIdAndUpdate(
-        partId,
-        { totalScore: finalScore },
-        { new: true },
-      );
-
-      if (updatedParticipant && updatedParticipant.teamId) {
-        affectedTeamIds.add(updatedParticipant.teamId.toString());
+        if (updatedParticipant && updatedParticipant.teamId) {
+          affectedTeamIds.add(updatedParticipant.teamId.toString());
+        }
       }
-    }
 
-    // 8. Global Recalculation: Update totalScore for each affected team
-    for (const teamId of affectedTeamIds) {
-      const teamParticipants = await Participant.find({ teamId });
-      const teamTotalScore = teamParticipants.reduce(
-        (sum, p) => sum + (p.totalScore || 0),
-        0,
-      );
+      // 8. Global Recalculation: Update totalScore for each affected team
+      for (const teamId of affectedTeamIds) {
+        const teamParticipants = await Participant.find({ teamId }).session(session);
+        const teamTotalScore = teamParticipants.reduce(
+          (sum, p) => sum + (p.totalScore || 0),
+          0,
+        );
 
-      await Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore });
-    }
+        await Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore }, { session });
+      }
 
-    // 9. Update program status to completed
-    await Program.findByIdAndUpdate(programId, { status: "completed" });
+      // 9. Update program status to completed
+      await Program.findByIdAndUpdate(programId, { status: "completed" }, { session });
 
-    // 10. Populate the position awards for the frontend results panel
-    const populatedResults = await ProgramResult.find({ programId })
-      .populate({ path: "participantId", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
-      .sort({ position: 1 });
+      // 10. Populate the position awards for the frontend results panel
+      const populatedResults = await ProgramResult.find({ programId })
+        .populate({ path: "participantId", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
+        .sort({ position: 1 })
+        .session(session);
 
-    res.json({
-      message: "Scores & rankings recalculated successfully",
-      participantsUpdated: affectedParticipantIds.length,
-      teamsUpdated: affectedTeamIds.size,
-      resultsAwarded: positionAwards.length,
-      positionResults: populatedResults, // For the frontend results panel
+      responseData = {
+        message: "Scores & rankings recalculated successfully",
+        participantsUpdated: affectedParticipantIds.length,
+        teamsUpdated: affectedTeamIds.size,
+        resultsAwarded: positionAwards.length,
+        positionResults: populatedResults, // For the frontend results panel
+      };
     });
+
+    return res.json(responseData);
+
   } catch (error) {
-    console.error("Calculate Error:", error);
-    res.status(500).json({ message: error.message });
+    if (error.message === "NO_MARKS_FOUND") {
+      return res.status(400).json({ message: "No marks found for this program to verify." });
+    }
+    sendError(res, 500, "Failed to calculate scores", error);
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -385,13 +450,21 @@ const exportToGoogleSheets = async (req, res) => {
     ];
     const sheetData = [headers];
 
+    // Helper to prevent formula injection in Google Sheets
+    const sanitizeForSheets = (val) => {
+        if (typeof val === 'string' && /^[=+\-@]/.test(val)) {
+            return "'" + val;
+        }
+        return val;
+    };
+
     // Rows
     sortedParticipants.forEach((item, index) => {
         const row = [
             index + 1,
-            item.participant?.name || "N/A",
-            item.participant?.chestNumber || "N/A",
-            item.participant?.teamId?.name || "N/A",
+            sanitizeForSheets(item.participant?.name || "N/A"),
+            sanitizeForSheets(item.participant?.chestNumber || "N/A"),
+            sanitizeForSheets(item.participant?.teamId?.name || "N/A"),
         ];
 
         // Add each assigned judge's mark
@@ -415,8 +488,7 @@ const exportToGoogleSheets = async (req, res) => {
 
     res.json({ message: `Successfully exported to Google Sheet tab: ${tabName}` });
   } catch (error) {
-    console.error("Export Sheets Error:", error);
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to export to Google Sheets", error);
   }
 };
 
@@ -445,7 +517,7 @@ const getPublicResults = async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, 500, "Failed to retrieve public results", error);
   }
 };
 
@@ -479,6 +551,47 @@ const streamMarks = (req, res) => {
   });
 };
 
+// @desc    Get all marks and results for admin export
+// @route   GET /api/marks/export-data
+// @access  Admin
+const getAllExportData = async (req, res) => {
+  try {
+    // 1. Get all submitted marks across all programs
+    const allMarks = await JudgeMark.find()
+      .populate({
+        path: "participantId",
+        select: "name chestNumber teamId",
+        populate: {
+          path: "teamId",
+          select: "name",
+        },
+      })
+      .populate("judgeId", "name")
+      .lean(); // Use lean() for performance since we don't need Mongoose documents
+
+    // 2. Get all public results across all completed programs
+    const allResults = await ProgramResult.find()
+      .populate({
+        path: "participantId",
+        select: "name chestNumber teamId",
+        populate: {
+          path: "teamId",
+          select: "name",
+        },
+      })
+      .select("position positionPoints participantId programId")
+      .sort({ position: 1 })
+      .lean();
+
+    res.json({
+      allMarks,
+      allResults
+    });
+  } catch (error) {
+    sendError(res, 500, "Failed to retrieve export data", error);
+  }
+};
+
 module.exports = {
   submitMark,
   getMarksByProgram,
@@ -486,5 +599,6 @@ module.exports = {
   exportToGoogleSheets,
   getPublicResults,
   streamMarks,
+  getAllExportData,
 };
 
