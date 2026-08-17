@@ -49,7 +49,7 @@ const writeLimiter = rateLimit({
 // Middleware
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  "http://localhost:3000",
+  "http://localhost:3001",
 ].filter(Boolean);
 
 app.use(
@@ -73,6 +73,14 @@ app.use(
 
 app.use(express.json({ limit: "5mb" }));
 
+// Disable caching globally for API responses
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
 // Parse cookies before CSRF middleware
 app.use(cookieParser());
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
-import { useAdminData } from '../AdminContext';
+import { usePrograms, useGroups, useParticipants, useExportData } from '@/lib/queries';
 import {
   Search, ChevronDown, ChevronUp, User,
   Award, X, RefreshCw, Users, BookOpen, Trophy, 
@@ -34,7 +34,9 @@ interface ParticipantRow {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function IndividualMarksPage() {
-  const { programs, groups, participants: cachedParticipants } = useAdminData();
+  const { data: programs = [] as any[] } = usePrograms();
+  const { data: groups = [] as any[] } = useGroups();
+  const { data: cachedParticipants = [] as any[] } = useParticipants();
 
   const [allMarks, setAllMarks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,43 +57,35 @@ export default function IndividualMarksPage() {
 
   const [allResults, setAllResults] = useState<Record<string, any>>({});
 
-  // Fetch marks and results in a single request (Batch Fetching)
+  // Fetch marks and results via TanStack Query (Cached)
+  const { data: exportData, isLoading: exportLoading } = useExportData();
+
   useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        const data = await apiRequest('/marks/export-data');
+      setLoading(exportLoading);
+      if (exportData && programs.length > 0) {
+          // Map marks to include program details from context
+          const processedMarks = (exportData.allMarks || []).map((m: any) => {
+            const pId = typeof m.programId === 'object' ? m.programId._id || m.programId : m.programId;
+            const prog = programs.find((p: any) => p._id === pId) || {};
+            return {
+              ...m,
+              programId: pId, // Keep ID for result lookups
+              programName: prog.name || 'Unknown Program',
+              programGroup: prog.groupId?.name || 'N/A',
+            };
+          });
+          setAllMarks(processedMarks);
 
-        // Map marks to include program details from context
-        const processedMarks = (data.allMarks || []).map((m: any) => {
-          const pId = typeof m.programId === 'object' ? m.programId._id || m.programId : m.programId;
-          const prog = programs.find((p: any) => p._id === pId) || {};
-          return {
-            ...m,
-            programId: pId, // Keep ID for result lookups
-            programName: prog.name || 'Unknown Program',
-            programGroup: prog.groupId?.name || 'N/A',
-          };
-        });
-        setAllMarks(processedMarks);
-
-        // Group results by programId
-        const resMap: Record<string, any> = {};
-        (data.allResults || []).forEach((r: any) => {
-          const pId = typeof r.programId === 'object' ? r.programId._id || r.programId : r.programId;
-          if (!resMap[pId]) resMap[pId] = [];
-          resMap[pId].push(r);
-        });
-        setAllResults(resMap);
-
-      } catch (error) {
-        console.error("Failed to load export data", error);
-      } finally {
-        setLoading(false);
+          // Group results by programId
+          const resMap: Record<string, any> = {};
+          (exportData.allResults || []).forEach((r: any) => {
+            const pId = typeof r.programId === 'object' ? r.programId._id || r.programId : r.programId;
+            if (!resMap[pId]) resMap[pId] = [];
+            resMap[pId].push(r);
+          });
+          setAllResults(resMap);
       }
-    };
-    if (programs.length > 0) fetchAll();
-  }, [programs]);
+  }, [exportData, exportLoading, programs]);
 
   // Build participant rows aggregating all their marks
   const participantRows = useMemo<ParticipantRow[]>(() => {

@@ -5,13 +5,21 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Users, LayoutGrid, Award, Calendar, FileText, LogOut, CheckSquare, PanelLeftClose, PanelLeftOpen, BarChart3, Shield, UsersRound, Gavel, BookOpen, Plus } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { AdminProvider } from './AdminContext';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000, // 1 minute default
+        refetchOnWindowFocus: false,
+      },
+    },
+  }));
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -45,7 +53,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!authorized) return <div className="text-white p-10">Checking authorization...</div>;
 
   return (
-    <AdminProvider>
+    <QueryClientProvider client={queryClient}>
       <div className="flex min-h-screen bg-[#080A12] text-white font-sans pb-20 md:pb-0 overflow-x-hidden">
         
         {/* Sidebar - Hidden on Mobile, togglable on desktop */}
@@ -129,7 +137,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </main>
       </div>
-    </AdminProvider>
+    </QueryClientProvider>
   );
 }
 

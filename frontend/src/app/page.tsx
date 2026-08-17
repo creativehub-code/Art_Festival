@@ -47,17 +47,29 @@ export default function PublicViewer() {
           const resultsData = await apiRequest(`/public/results/${lastProgram._id}`);
 
           // Map the ProgramResult schema to our ParticipantResult interface
-          const mappedResults: ParticipantResult[] = resultsData.map((res: any) => ({
-            participantId: res.participantId?._id || 'N/A',
-            name: res.participantId?.name || 'N/A',
-            chestNumber: res.participantId?.chestNumber || 'N/A',
-            teamName: res.participantId?.teamId?.name || 'No Team',
-            totalScore: res.positionPoints || 0
-          }));
+          const mappedResults: ParticipantResult[] = resultsData.flatMap((res: any) => {
+            if (res.participantIds && res.participantIds.length > 0) {
+              return res.participantIds.map((p: any) => ({
+                participantId: p._id || 'N/A',
+                name: p.name || 'N/A',
+                chestNumber: p.chestNumber || 'N/A',
+                teamName: res.teamId?.name || p.teamId?.name || 'No Team',
+                totalScore: res.positionPoints || 0
+              }));
+            }
+            return [{
+              participantId: res.participantId?._id || 'N/A',
+              name: res.participantId?.name || 'N/A',
+              chestNumber: res.participantId?.chestNumber || 'N/A',
+              teamName: res.teamId?.name || 'No Team',
+              totalScore: res.positionPoints || 0
+            }];
+          });
 
           setLatestResult({
             programName: lastProgram.name,
-            results: mappedResults.slice(0, 5)
+            results: mappedResults.slice(0, 15) // slice to 15 in case of big groups
+
           });
         } else {
           setLatestResult(null);

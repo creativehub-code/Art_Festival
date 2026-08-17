@@ -40,7 +40,8 @@ function MarkingInterface({ programIdParam }: { programIdParam: any }) {
         console.log('[DEBUG] INITIALIZING PROGRAM WITH USER:', user);
         
         // Fetch ALL participants for MVP (Assuming small scale)
-        const parts = await apiRequest('/participants');
+        const partsRes = await apiRequest('/participants');
+        const parts = Array.isArray(partsRes) ? partsRes : (partsRes.data || []);
         const progs = await apiRequest('/programs');
         const markData = await apiRequest(`/marks/${programId}`);
         const allMarks = markData.marks || [];

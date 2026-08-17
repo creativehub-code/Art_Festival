@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users } from 'lucide-react';
-import { useAdminData } from '../AdminContext';
+import { usePrograms, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
 
 export default function ProgramsPage() {
-  const { programs, groups, refreshPrograms, loading } = useAdminData();
+  const { data: programs = [], isLoading: loadingPrograms } = usePrograms();
+  const { data: groups = [] as any[] } = useGroups();
+  const { invalidatePrograms } = useInvalidate();
+  const loading = loadingPrograms;
   const [selectedGroupFilters, setSelectedGroupFilters] = useState<Record<string, string>>({});
   
   // Modal State
@@ -16,7 +19,7 @@ export default function ProgramsPage() {
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {
       await apiRequest(`/programs/${id}`, 'PATCH', { status: newStatus });
-      refreshPrograms();
+      invalidatePrograms();
     } catch (e: any) { alert(e.message); }
   };
 
@@ -24,7 +27,7 @@ export default function ProgramsPage() {
     if (!confirm('Are you sure you want to delete this program?')) return;
     try {
       await apiRequest(`/programs/${id}`, 'DELETE');
-      refreshPrograms();
+      invalidatePrograms();
     } catch (e: any) { alert(e.message); }
   };
 
@@ -37,7 +40,7 @@ export default function ProgramsPage() {
 
   // View Participants Modal State
   const [viewProgram, setViewProgram] = useState<any>(null);
-  const { participants } = useAdminData(); // Get all participants to filter client-side
+  const { data: participants = [] as any[] } = useParticipants(); // Get all participants to filter client-side
 
   // Filter participants for the selected program
   const enrolledParticipants = viewProgram 
@@ -199,7 +202,7 @@ export default function ProgramsPage() {
           onClose={() => setIsModalOpen(false)}
           defaultLanguage={modalDefaultLanguage}
           groups={groups}
-          onSuccess={refreshPrograms}
+          onSuccess={async () => invalidatePrograms()}
         />
       )}
 
@@ -309,7 +312,6 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, onSucces
         try {
             await apiRequest('/programs', 'POST', form);
             await onSuccess();
-            
             if (createMultiple) {
                 // Keep language and group, clear name
                 setForm(prev => ({ ...prev, name: '' }));

@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Trash2, X, Shield, Plus, Users, ChevronRight, Layers } from 'lucide-react';
-import { useAdminData } from '../AdminContext';
+import { useGroups, useInvalidate } from '@/lib/queries';
 
 export default function GroupsPage() {
-  const { groups, refreshGroups } = useAdminData();
+  const { data: groups = [] as any[] } = useGroups();
+  const { invalidateGroups } = useInvalidate();
   const [name, setName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
 
@@ -14,7 +15,7 @@ export default function GroupsPage() {
     e.preventDefault();
     try {
       await apiRequest('/groups', 'POST', { name });
-      refreshGroups();
+      invalidateGroups();
       setName('');
     } catch(e) { alert('Error creating group'); }
   };
@@ -24,7 +25,7 @@ export default function GroupsPage() {
     if (!confirm('Are you sure you want to delete this group?')) return;
     try {
       await apiRequest(`/groups/${id}`, 'DELETE');
-      refreshGroups();
+      invalidateGroups();
       if (selectedGroup?._id === id) setSelectedGroup(null);
     } catch (e: any) { alert(e.message); }
   };

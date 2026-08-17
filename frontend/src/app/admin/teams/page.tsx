@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { X, Trash2, Shield, Users, Trophy, Plus, ChevronRight } from 'lucide-react';
-import { useAdminData } from '../AdminContext';
+import { useTeams, useParticipants, useInvalidate } from '@/lib/queries';
 
 export default function TeamsPage() {
-  const { teams, participants, refreshTeams } = useAdminData();
+  const { data: teams = [] as any[] } = useTeams();
+  const { data: participants = [] as any[] } = useParticipants();
+  const { invalidateTeams } = useInvalidate();
   const [name, setName] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<any>(null);
   const [filterGroup, setFilterGroup] = useState('All');
@@ -27,7 +29,7 @@ export default function TeamsPage() {
     e.preventDefault();
     try {
       await apiRequest('/teams', 'POST', { name });
-      refreshTeams();
+      invalidateTeams();
       setName('');
     } catch(e) { alert('Error creating team'); }
   };
@@ -37,7 +39,7 @@ export default function TeamsPage() {
     if (!confirm('Are you sure you want to delete this team?')) return;
     try {
       await apiRequest(`/teams/${id}`, 'DELETE');
-      refreshTeams();
+      invalidateTeams();
       if (selectedTeam?._id === id) setSelectedTeam(null);
     } catch (e: any) { alert(e.message); }
   };
