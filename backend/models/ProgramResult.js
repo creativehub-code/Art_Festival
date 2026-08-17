@@ -12,6 +12,18 @@ const programResultSchema = new mongoose.Schema(
       ref: "Participant",
       required: true,
     },
+    participantIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Participant",
+    }],
+    teamId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Team",
+    },
+    isConversation: {
+      type: Boolean,
+      default: false,
+    },
     position: {
       type: Number, // 1 for first place, 2 for second place, 3 for third place
       required: true,

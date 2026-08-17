@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const JudgeMark = require("../models/JudgeMark");
 const JudgeGroup = require("../models/JudgeGroup");
+const MarkAuditLog = require("../models/MarkAuditLog");
 const Participant = require("../models/Participant");
 const Team = require("../models/Team");
 const Group = require("../models/Group");
@@ -9,7 +10,6 @@ const Setting = require("../models/Setting");
 const ProgramResult = require("../models/ProgramResult");
 const ConversationPair = require("../models/ConversationPair");
 const { updateGoogleSheet } = require("../utils/googleSheets");
-const sseManager = require("../utils/sseManager");
 const sendError = require("../utils/errorResponse");
 
 // @desc    Submit or Updates marks (Judge)
@@ -119,7 +119,6 @@ const submitMark = async (req, res) => {
     };
 
     // Broadcast to all admin SSE clients watching this program.
-    sseManager.broadcast(programId, broadcastPayload);
 
     // ── Conversation group: auto-mirror mark to ALL group members ──────────────
     // If this participant is the primary of a conversation group, upsert the
@@ -137,7 +136,7 @@ const submitMark = async (req, res) => {
       const mirroringPromises = otherMemberIds.map(memberId => 
         JudgeMark.findOneAndUpdate(
           { judgeId, programId, participantId: memberId },
-          { marksGiven: marks, submitted: false },
+          { marksGiven: marks, status: "pending" },
           { upsert: true, new: true }
         )
       );
@@ -221,8 +220,12 @@ const calculateScores = async (req, res) => {
     let responseData = null;
 
     await session.withTransaction(async () => {
-      // 1. Get all marks for this program
-      const marks = await JudgeMark.find({ programId }).session(session);
+      // Fetch program to check if it's a conversation
+      const program = await Program.findById(programId).session(session);
+      if (!program) throw new Error("PROGRAM_NOT_FOUND");
+
+      // 1. Get all APPROVED marks for this program
+      const marks = await JudgeMark.find({ programId, status: "approved" }).session(session);
 
       if (marks.length === 0) {
         throw new Error("NO_MARKS_FOUND");
@@ -287,20 +290,59 @@ const calculateScores = async (req, res) => {
         }
       }
 
+      // Enrich positionAwards with participantIds and teamId
+      let pairs = [];
+      if (program.isConversation) {
+        pairs = await ConversationPair.find({ programId }).session(session);
+      }
+      const participantDocs = await Participant.find({ _id: { $in: sortedParticipants } }).session(session);
+      
+      const enrichedAwards = positionAwards.map(award => {
+        let participantIds = [award.participantId];
+        let teamId = null;
+        
+        if (program.isConversation) {
+          const pair = pairs.find(p => p.primaryParticipantId.toString() === award.participantId.toString());
+          if (pair) {
+            participantIds = pair.participants.map(p => p.toString());
+            teamId = pair.teamId;
+          }
+        } else {
+          const part = participantDocs.find(p => p._id.toString() === award.participantId.toString());
+          if (part) {
+            teamId = part.teamId;
+          }
+        }
+        
+        return {
+          ...award,
+          participantIds,
+          teamId,
+          isConversation: program.isConversation
+        };
+      });
+
       // Save the new program results
-      if (positionAwards.length > 0) {
-        await ProgramResult.insertMany(positionAwards, { session });
+      if (enrichedAwards.length > 0) {
+        await ProgramResult.insertMany(enrichedAwards, { session });
       }
 
       // 7. Global Recalculation: Update totalScore for each affected participant
       // TotalScore = Sum of ALL Position Points (Judges marks are only for ranking)
-      const affectedParticipantIds = [
-        ...new Set(marks.map((mark) => mark.participantId.toString())),
-      ];
+      const primaryAffectedIds = marks.map((mark) => mark.participantId.toString());
+      const affectedParticipantIds = new Set(primaryAffectedIds);
+      
+      if (program.isConversation) {
+        const pairsForAffected = await ConversationPair.find({ programId, primaryParticipantId: { $in: primaryAffectedIds } }).session(session);
+        pairsForAffected.forEach(pair => pair.participants.forEach(p => affectedParticipantIds.add(p.toString())));
+      }
+      
       const affectedTeamIds = new Set();
 
       for (const partId of affectedParticipantIds) {
-        const allResults = await ProgramResult.find({ participantId: partId }).session(session);
+        const allResults = await ProgramResult.find({ 
+          $or: [{ participantId: partId }, { participantIds: partId }] 
+        }).session(session);
         const totalPositionScore = allResults.reduce(
           (sum, r) => sum + (r.positionPoints || 0),
           0,
@@ -322,9 +364,10 @@ const calculateScores = async (req, res) => {
 
       // 8. Global Recalculation: Update totalScore for each affected team
       for (const teamId of affectedTeamIds) {
-        const teamParticipants = await Participant.find({ teamId }).session(session);
-        const teamTotalScore = teamParticipants.reduce(
-          (sum, p) => sum + (p.totalScore || 0),
+        if (!teamId) continue;
+        const teamResults = await ProgramResult.find({ teamId }).session(session);
+        const teamTotalScore = teamResults.reduce(
+          (sum, r) => sum + (r.positionPoints || 0),
           0,
         );
 
@@ -336,15 +379,15 @@ const calculateScores = async (req, res) => {
 
       // 10. Populate the position awards for the frontend results panel
       const populatedResults = await ProgramResult.find({ programId })
-        .populate({ path: "participantId", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
+        .populate({ path: "participantIds", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
         .sort({ position: 1 })
         .session(session);
 
       responseData = {
         message: "Scores & rankings recalculated successfully",
-        participantsUpdated: affectedParticipantIds.length,
+        participantsUpdated: affectedParticipantIds.size,
         teamsUpdated: affectedTeamIds.size,
-        resultsAwarded: positionAwards.length,
+        resultsAwarded: enrichedAwards.length,
         positionResults: populatedResults, // For the frontend results panel
       };
     });
@@ -505,14 +548,14 @@ const getPublicResults = async (req, res) => {
 
     const results = await ProgramResult.find({ programId })
       .populate({
-        path: "participantId",
+        path: "participantIds",
         select: "name chestNumber teamId",
         populate: {
           path: "teamId",
           select: "name",
         },
       })
-      .select("position positionPoints participantId")
+      .select("position positionPoints participantIds isConversation")
       .sort({ position: 1 });
 
     res.json(results);
@@ -592,6 +635,94 @@ const getAllExportData = async (req, res) => {
   }
 };
 
+// @desc    Update Mark Status (Approve/Reject)
+// @route   PATCH /api/marks/:id/status
+// @access  Admin
+const updateMarkStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!["approved", "rejected", "pending"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status." });
+    }
+
+    const mark = await JudgeMark.findById(id);
+    if (!mark) {
+      return res.status(404).json({ message: "Mark not found." });
+    }
+
+    mark.status = status;
+    if (status === "approved") {
+      mark.submitted = true;
+    }
+    await mark.save();
+
+    res.json({ message: `Mark ${status} successfully.`, mark });
+  } catch (error) {
+    sendError(res, 500, "Error updating mark status", error);
+  }
+};
+
+// @desc    Edit Approved Mark
+// @route   PATCH /api/marks/:id
+// @access  Admin
+const editApprovedMark = async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    let updatedMark;
+    await session.withTransaction(async () => {
+      const { id } = req.params;
+      const { newMark, reason } = req.body;
+      const adminId = req.user.id;
+
+      if (typeof newMark !== "number" || newMark < 0) {
+        throw new Error("Invalid mark value.");
+      }
+
+      const mark = await JudgeMark.findById(id).session(session);
+      if (!mark) {
+        throw new Error("Mark not found.");
+      }
+
+      if (mark.status !== "approved") {
+        throw new Error("Only approved marks can be edited.");
+      }
+
+      const oldMarkValue = mark.marksGiven;
+
+      // 1. Create audit log
+      await MarkAuditLog.create(
+        [
+          {
+            markId: mark._id,
+            judgeId: mark.judgeId,
+            programId: mark.programId,
+            participantId: mark.participantId,
+            oldMark: oldMarkValue,
+            newMark,
+            changedByAdminId: adminId,
+            reason: reason || "No reason provided",
+          },
+        ],
+        { session }
+      );
+
+      // 2. Update mark
+      mark.marksGiven = newMark;
+      updatedMark = await mark.save({ session });
+    });
+    res.json({ message: "Mark updated successfully", mark: updatedMark });
+  } catch (error) {
+    if (["Invalid mark value.", "Mark not found.", "Only approved marks can be edited."].includes(error.message)) {
+       return res.status(400).json({ message: error.message });
+    }
+    sendError(res, 500, "Error editing mark", error);
+  } finally {
+    await session.endSession();
+  }
+};
+
 module.exports = {
   submitMark,
   getMarksByProgram,
@@ -600,5 +731,7 @@ module.exports = {
   getPublicResults,
   streamMarks,
   getAllExportData,
+  updateMarkStatus,
+  editApprovedMark,
 };
 

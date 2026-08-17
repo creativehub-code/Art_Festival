@@ -1,24 +1,25 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud } from 'lucide-react';
-import { useAdminData } from '../AdminContext';
+import { usePrograms, useGroups, useInvalidate, useSettings, useMarks, useConversationPairs } from '@/lib/queries';
 import ToastContainer, { type ToastData } from '@/components/ToastContainer';
 
 export default function MarksReviewPage() {
-  const { programs, groups, loading: contextLoading, refreshPrograms, refreshTeams, refreshParticipants } = useAdminData();
-  const [selectedProgram, setSelectedProgram] = useState('');
-  const [selectedProgramData, setSelectedProgramData] = useState<any>(null);
-  const [marks, setMarks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { data: programs = [] as any[] } = usePrograms();
+  const { data: groups = [] as any[] } = useGroups();
+  const { invalidatePrograms, invalidateTeams, invalidateParticipants } = useInvalidate();
+  const refreshPrograms = invalidatePrograms;
+  const refreshTeams = invalidateTeams;
+  const refreshParticipants = invalidateParticipants;
+  const contextLoading = false;
   
   const [verifying, setVerifying] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [verifiedPrograms, setVerifiedPrograms] = useState<Set<string>>(new Set());
   const [verifyResults, setVerifyResults] = useState<any[] | null>(null); // position results after verify
-  const [conversationPairs, setConversationPairs] = useState<any[]>([]); // holds pairs for combined display
+
   
   // SSE connection ref — used to abort the stream on cleanup/program-change
   const sseAbortRef = useRef<AbortController | null>(null);
@@ -41,156 +42,63 @@ export default function MarksReviewPage() {
   const [selectedFilterLang, setSelectedFilterLang] = useState('All');
   const [selectedFilterGroup, setSelectedFilterGroup] = useState('All');
   const [filterSubmittedOnly, setFilterSubmittedOnly] = useState(false);
-  const [assignedJudges, setAssignedJudges] = useState<any[]>([]);
+  const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
+  const [selectedProgramData, setSelectedProgramData] = useState<any>(null);
 
-  // Settings State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState({ firstPlacePoints: 5, secondPlacePoints: 3, thirdPlacePoints: 1 });
-  const [savingSettings, setSavingSettings] = useState(false);
+  // Mark Action Handlers
+  const handleMarkAction = async (markId: string, action: 'approve' | 'reject' | 'edit', newMarkValue?: number, reason?: string) => {
+      try {
+          if (action === 'edit') {
+              if (newMarkValue === undefined || !reason) {
+                  return alert("New mark and reason are required for edits.");
+              }
+              await apiRequest(`/marks/${markId}`, 'PATCH', { newMark: newMarkValue, reason });
+              addToast({ judgeName: 'System', programName: 'Mark updated successfully', language: '' });
+          } else {
+              const status = action === 'approve' ? 'approved' : 'rejected';
+              await apiRequest(`/marks/${markId}/status`, 'PATCH', { status });
+              addToast({ judgeName: 'System', programName: `Mark ${status} successfully`, language: '' });
+          }
+          await refreshMarks();
+      } catch (e: any) {
+          alert(e.message);
+      }
+  };
 
-  useEffect(() => {
-    apiRequest('/settings').then(data => {
-        if(data) {
-           setSettings({
-               firstPlacePoints: data.firstPlacePoints || 5,
-               secondPlacePoints: data.secondPlacePoints || 3,
-               thirdPlacePoints: data.thirdPlacePoints || 1
-           });
-        }
-    }).catch(console.error);
-  }, []);
+  // TanStack Query Hooks replacing local state
+  const { data: serverSettings = { firstPlacePoints: 5, secondPlacePoints: 3, thirdPlacePoints: 1 } } = useSettings();
+  const [settings, setSettings] = React.useState(serverSettings);
+  const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
+  const [savingSettings, setSavingSettings] = React.useState(false);
+  
+  React.useEffect(() => {
+      setSettings(serverSettings);
+  }, [serverSettings]);
+  const { data: marksData, isLoading: marksLoading, refetch: refreshMarks } = useMarks(selectedProgram);
+  const { data: conversationPairs = [] as any[] } = useConversationPairs(selectedProgram, !!selectedProgramData?.isConversation);
+  
+  const marks = marksData?.marks || [];
+  
+  const assignedJudges = useMemo(() => {
+      if (marksData?.assignedJudges && marksData.assignedJudges.length > 0) {
+        return marksData.assignedJudges;
+      } else if (marks && marks.length > 0) {
+        const uniqueJudges = Array.from(new Set(marks.map((m: any) => m.judgeId?._id))).filter(Boolean);
+        return uniqueJudges.map(jId => {
+            const sampleMark = marks.find((m: any) => m.judgeId?._id === jId);
+            return { _id: jId as string, name: sampleMark?.judgeId?.name || "Judge" };
+        });
+      }
+      return [];
+  }, [marksData, marks]);
 
   const handleProgramSelect = async (program: any) => {
     setSelectedProgram(program._id);
     setSelectedProgramData(program);
     setViewMode('details');
-    
-    if(!program._id) {
-        setMarks([]);
-        setAssignedJudges([]);
-        return;
-    }
-    setLoading(true);
-    try {
-      const data = await apiRequest(`/marks/${program._id}`);
-      setMarks(data.marks || []);
-      
-      if (program.isConversation) {
-          try {
-              const pairData = await apiRequest(`/conversation-pairs/by-program/${program._id}`);
-              setConversationPairs(pairData || []);
-          } catch(e) { console.error("Error fetching pairs", e); }
-      } else {
-          setConversationPairs([]);
-      }
-      
-      // If API returns assignedJudges, use them. Otherwise, derive from marks for backward compatibility/fallback.
-      if (data.assignedJudges && data.assignedJudges.length > 0) {
-        setAssignedJudges(data.assignedJudges);
-      } else if (data.marks && data.marks.length > 0) {
-        // Derive from marks
-        const uniqueJudges = Array.from(new Set(data.marks.map((m: any) => m.judgeId?._id))).filter(Boolean);
-        const derived = uniqueJudges.map(jId => {
-            const sampleMark = data.marks.find((m: any) => m.judgeId?._id === jId);
-            return { _id: jId, name: sampleMark?.judgeId?.name || "Judge" };
-        });
-        setAssignedJudges(derived);
-      } else {
-        setAssignedJudges([]);
-      }
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
   };
 
-  /**
-   * Merge a live SSE mark update into local state.
-   * - If the mark already exists (same _id), replace it in-place.
-   * - If it's brand new, append it.
-   * Also ensures the judge appears in the assignedJudges list for column rendering.
-   */
-  const mergeIncomingMark = (incoming: any) => {
-    setMarks(prev => {
-      const idx = prev.findIndex((m: any) => m._id === incoming._id);
-      if (idx !== -1) {
-        const updated = [...prev];
-        updated[idx] = incoming;
-        return updated;
-      }
-      return [...prev, incoming];
-    });
 
-    // Ensure the judge is tracked in assignedJudges so their column renders
-    if (incoming.judgeId?._id) {
-      setAssignedJudges(prev => {
-        if (prev.some((j: any) => j._id === incoming.judgeId._id)) return prev;
-        return [...prev, { _id: incoming.judgeId._id, name: incoming.judgeId.name }];
-      });
-    }
-  };
-
-  /**
-   * Open/close the SSE stream whenever the selected program changes.
-   * Token is read from localStorage and sent in the Authorization header —
-   * never as a query parameter.
-   */
-  useEffect(() => {
-    // Abort any existing SSE connection first
-    if (sseAbortRef.current) {
-      sseAbortRef.current.abort();
-      sseAbortRef.current = null;
-    }
-
-    if (!selectedProgram || viewMode !== 'details') return;
-
-    const controller = new AbortController();
-    sseAbortRef.current = controller;
-
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return;
-
-    fetchEventSource(`${API_BASE_URL}/marks/stream/${selectedProgram}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      signal: controller.signal,
-      // Re-open on transient network errors (but not on explicit abort)
-      async onopen(response) {
-        if (response.ok) {
-          console.log('[SSE] Stream opened for program', selectedProgram);
-        }
-      },
-      onmessage(event) {
-        try {
-          const incomingMark = JSON.parse(event.data);
-          // Update the marks table
-          mergeIncomingMark(incomingMark);
-          // Show a toast notification using the _notification metadata
-          if (incomingMark._notification) {
-            addToast({
-              judgeName:   incomingMark._notification.judgeName,
-              programName: incomingMark._notification.programName,
-              language:    incomingMark._notification.language,
-            });
-          }
-        } catch {
-          // Ignore non-JSON SSE comments (e.g., ": connected")
-        }
-      },
-      onerror(err) {
-        // Don't spam retries if we intentionally aborted
-        if (controller.signal.aborted) return;
-        console.warn('[SSE] Stream error, will retry:', err);
-      },
-    });
-
-    // Cleanup: abort the stream when the component unmounts or selectedProgram changes
-    return () => {
-      controller.abort();
-      sseAbortRef.current = null;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProgram, viewMode]);
 
   const groupedMarks = useMemo(() => {
     if (!marks.length) return [];
@@ -198,7 +106,7 @@ export default function MarksReviewPage() {
     const participantMap: Record<string, any> = {};
     
     // 1. Group by participant
-    marks.forEach(m => {
+    marks.forEach((m: any) => {
         let pId = m.participantId?._id;
         let participantObj = m.participantId;
         
@@ -235,11 +143,15 @@ export default function MarksReviewPage() {
         }
         
         participantMap[pId].judgesMarks.push({
+            id: m._id,
             judgeName: m.judgeId?.name,
             judgeInitial: m.judgeId?.name?.charAt(0),
-            mark: m.marksGiven
+            mark: m.marksGiven,
+            status: m.status || 'pending'
         });
-        participantMap[pId].totalScore += m.marksGiven || 0;
+        if (m.status === 'approved') {
+            participantMap[pId].totalScore += m.marksGiven || 0;
+        }
     });
 
     // 2. Convert to array and sort by total score descending
@@ -270,7 +182,7 @@ export default function MarksReviewPage() {
        // Update local selected program data to reflect the new state so it updates immediately
        setSelectedProgramData((prev: any) => ({ ...prev, status: 'completed' }));
        
-       setVerifiedPrograms(prev => new Set([...Array.from(prev), selectedProgram]));
+       setVerifiedPrograms(prev => new Set([...Array.from(prev), selectedProgram as string]));
        
        // Show the rich results panel instead of a plain alert
        if (result?.positionResults?.length > 0) {
@@ -482,12 +394,22 @@ export default function MarksReviewPage() {
                     <div className="flex gap-3 w-full md:w-auto">
                         <button 
                             onClick={handleCalculate}
-                            disabled={!selectedProgram || verifying || verifiedPrograms.has(selectedProgram) || selectedProgramData?.status === 'completed'}
+                            disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
                             className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg hover:shadow-green-900/20 active:scale-95"
                         >
-                            {(verifiedPrograms.has(selectedProgram) || selectedProgramData?.status === 'completed') ? <CheckCircle size={18} /> : <Trophy size={18} />}
-                            {verifying ? 'Verifying...' : (verifiedPrograms.has(selectedProgram) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
+                            {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={18} /> : <Trophy size={18} />}
+                            {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
                         </button> 
+
+                        <button
+                            onClick={() => refreshMarks()}
+                            disabled={!marks.length || marksLoading}
+                            className="p-3 bg-green-600/10 hover:bg-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed text-green-400 rounded-xl font-bold transition-all border border-green-500/20 active:scale-95 flex items-center gap-2"
+                            title="Refresh Marks"
+                        >
+                            <RefreshCw size={20} className={marksLoading ? "animate-spin" : ""} />
+                            <span className="hidden sm:inline">Refresh Marks</span>
+                        </button>
 
                         <button
                             onClick={downloadCSV}
@@ -612,7 +534,7 @@ export default function MarksReviewPage() {
                                 <tr>
                                     <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500">Participant</th>
                                     {assignedJudges.length > 0 ? (
-                                        assignedJudges.map(judge => (
+                                        assignedJudges.map((judge: any) => (
                                             <th key={judge._id} className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">
                                                 {judge.name}
                                             </th>
@@ -625,9 +547,14 @@ export default function MarksReviewPage() {
                                 </tr>
                             </thead>
                         <tbody className="divide-y divide-[#2D283E]">
-                            {loading ? (
+                            {marksLoading ? (
                                 <tr>
-                                    <td colSpan={4} className="p-16 text-center">
+                                    <td colSpan={4} className="p-16 text-center relative">
+                                        {marksLoading && (
+                                            <div className="absolute inset-0 bg-[#0F0D15]/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-xl border border-white/5">
+                                                <RefreshCw size={32} className="animate-spin text-purple-500" />
+                                            </div>
+                                        )}
                                         <div className="flex flex-col items-center justify-center gap-3 text-purple-400 animate-pulse">
                                             <RefreshCw size={32} className="animate-spin" />
                                             <span className="font-medium">Loading marks...</span>
@@ -649,13 +576,39 @@ export default function MarksReviewPage() {
                                             </div>
                                         </td>
                                         {assignedJudges.length > 0 ? (
-                                            assignedJudges.map(judge => {
+                                            assignedJudges.map((judge: any) => {
                                                 const judgeMark = m.judgesMarks.find((jm: any) => jm.judgeName === judge.name);
                                                 return (
                                                     <td key={judge._id} className="p-5 text-center">
                                                         {judgeMark ? (
-                                                            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-purple-600/10 border border-purple-600/20 text-purple-300 font-bold font-mono text-lg shadow-inner">
-                                                                {judgeMark.mark}
+                                                            <div className="flex flex-col items-center gap-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-purple-600/10 border border-purple-600/20 text-purple-300 font-bold font-mono text-lg shadow-inner">
+                                                                        {judgeMark.mark}
+                                                                    </div>
+                                                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${
+                                                                        judgeMark.status === 'approved' ? 'bg-green-500/10 text-green-400' :
+                                                                        judgeMark.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
+                                                                        'bg-yellow-500/10 text-yellow-400'
+                                                                    }`}>
+                                                                        {judgeMark.status}
+                                                                    </span>
+                                                                </div>
+                                                                {judgeMark.status === 'pending' && (
+                                                                    <div className="flex gap-1 mt-1">
+                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'approve')} className="text-[10px] bg-green-500/20 hover:bg-green-500/40 text-green-300 px-2 py-1 rounded transition-colors">Approve</button>
+                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'reject')} className="text-[10px] bg-red-500/20 hover:bg-red-500/40 text-red-300 px-2 py-1 rounded transition-colors">Reject</button>
+                                                                    </div>
+                                                                )}
+                                                                {judgeMark.status === 'approved' && (
+                                                                    <button onClick={() => {
+                                                                        const newVal = prompt(`Edit mark for ${m.participant.name} by ${judge.name}\nEnter new mark:`, judgeMark.mark);
+                                                                        if (newVal !== null && !isNaN(Number(newVal))) {
+                                                                            const reason = prompt("Enter reason for editing this approved mark:");
+                                                                            if (reason) handleMarkAction(judgeMark.id, 'edit', Number(newVal), reason);
+                                                                        }
+                                                                    }} className="text-[10px] bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-3 py-1 rounded mt-1 transition-colors">Edit</button>
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             <span className="text-gray-700 font-bold font-mono">--</span>

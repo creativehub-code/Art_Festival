@@ -1,7 +1,12 @@
 const mongoose = require("mongoose");
 
-const judgeMarkSchema = new mongoose.Schema(
+const markAuditLogSchema = new mongoose.Schema(
   {
+    markId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "JudgeMark",
+      required: true,
+    },
     judgeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Judge",
@@ -17,19 +22,22 @@ const judgeMarkSchema = new mongoose.Schema(
       ref: "Participant",
       required: true,
     },
-    marksGiven: {
+    oldMark: {
       type: Number,
       required: true,
-      min: 0,
     },
-    submitted: {
-      type: Boolean,
-      default: false,
+    newMark: {
+      type: Number,
+      required: true,
     },
-    status: {
+    changedByAdminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Admin",
+      required: true,
+    },
+    reason: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
-      default: "pending",
+      default: "",
     },
   },
   {
@@ -37,6 +45,4 @@ const judgeMarkSchema = new mongoose.Schema(
   },
 );
 
-judgeMarkSchema.index({ judgeId: 1, programId: 1, participantId: 1 }, { unique: true });
-
-module.exports = mongoose.model("JudgeMark", judgeMarkSchema);
+module.exports = mongoose.model("MarkAuditLog", markAuditLogSchema);

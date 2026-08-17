@@ -3,18 +3,15 @@
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Plus, Trash2, Users, X, UserMinus, Edit3, Globe, KeyRound } from 'lucide-react';
-import { useAdminData } from '../AdminContext';
+import { usePrograms, useJudgeGroups, useJudges, useGroups, useInvalidate } from '@/lib/queries';
 
 export default function JudgeGroupsPage() {
-  const { 
-    programs, 
-    judgeGroups, 
-    judges: allJudges, 
-    groups,
-    loading: contextLoading,
-    refreshJudgeGroups,
-    refreshJudges
-  } = useAdminData(); // Use cached data
+  const { data: programs = [] as any[] } = usePrograms();
+  const { data: judgeGroups = [] as any[] } = useJudgeGroups();
+  const { data: allJudges = [] as any[] } = useJudges();
+  const { data: groups = [] as any[] } = useGroups();
+  const { invalidateJudgeGroups, invalidateJudges } = useInvalidate();
+  const contextLoading = false;
   
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -30,20 +27,19 @@ export default function JudgeGroupsPage() {
   const [panelSearchQ, setPanelSearchQ] = useState('');
   const [programSearchQ, setProgramSearchQ] = useState('');
 
-
   // Compute assigned programs to disable/sort them
   const programAssignmentStatus = useMemo(() => {
     const assignedToMap = new Map<string, string>(); // programId -> groupName
-    judgeGroups.forEach(group => {
+    judgeGroups.forEach((group: any) => {
         group.assignedPrograms?.forEach((p: any) => {
             assignedToMap.set(p._id, group.name);
         });
     });
 
-    return programs.map(p => ({
+    return programs.map((p: any) => ({
         ...p,
         assignedToGroupName: assignedToMap.get(p._id) || null
-    })).sort((a, b) => {
+    })).sort((a: any, b: any) => {
         // Sort unassigned first, assigned last
         if (a.assignedToGroupName && !b.assignedToGroupName) return 1;
         if (!a.assignedToGroupName && b.assignedToGroupName) return -1;
@@ -86,8 +82,8 @@ export default function JudgeGroupsPage() {
               setAssignedProgramIds([]);
               setLangFilter('');
               setProgramSearchQ('');
-      refreshJudgeGroups(); // Refresh global list
-      refreshJudges(); // Also refresh judges list
+      invalidateJudgeGroups(); // Refresh global list
+      invalidateJudges(); // Also refresh judges list
     } catch (error: any) {
       alert(error.message);
     }
@@ -97,8 +93,8 @@ export default function JudgeGroupsPage() {
     if (!confirm('Are you sure you want to delete this judge group? All associated judges and their access will be removed.')) return;
     try {
       await apiRequest(`/judgeGroups/${id}`, 'DELETE');
-      refreshJudgeGroups();
-      refreshJudges();
+      invalidateJudgeGroups();
+      invalidateJudges();
     } catch (error: any) {
        alert(error.message);
     }
@@ -124,7 +120,7 @@ export default function JudgeGroupsPage() {
           setAssignedProgramIds([]);
           setLangFilter('');
           setProgramSearchQ('');
-          refreshJudgeGroups(); // Refresh global list
+          invalidateJudgeGroups(); // Refresh global list
       } catch(error: any) {
           alert(error.message);
       }

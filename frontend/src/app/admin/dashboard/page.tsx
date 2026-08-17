@@ -13,7 +13,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
-import { useAdminData } from '../AdminContext';
+import { usePrograms, useTeams, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
 
 ChartJS.register(
   CategoryScale,
@@ -25,7 +25,13 @@ ChartJS.register(
 );
 
 export default function AdminDashboard() {
-  const { programs, teams, groups, participants, refreshPrograms, loading } = useAdminData();
+  const { data: programs = [] } = usePrograms();
+  const { data: teams = [] } = useTeams();
+  const { data: groups = [] } = useGroups();
+  const { data: participants = [] } = useParticipants();
+  const { invalidatePrograms } = useInvalidate();
+  const refreshPrograms = invalidatePrograms;
+  const loading = false;
   const participantCount = participants?.length ?? 0;
   
   // Local state for UI

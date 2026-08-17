@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, User, Users, Flag, Save, Layers, Grid, FileText, Globe, Image, Upload, Search, ChevronDown, List } from 'lucide-react';
-import { useAdminData } from '../AdminContext';
+import { useGroups, useTeams, usePrograms, useParticipants, useInvalidate } from '@/lib/queries';
 
 // Memoized Row Component to prevent full table re-renders on hover
 const ParticipantRow = React.memo(({ p, index, displayIndex, hoveredParticipant, setHoveredParticipant, setViewParticipant, setSelectedParticipantForProgram, setShowAddProgramModal, handleDelete }: any) => {
@@ -91,8 +91,6 @@ const CustomSelect = ({ value, onChange, options, placeholder, icon: Icon, disab
         <div 
             className={`relative group ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`} 
             ref={wrapperRef}
-            onMouseEnter={() => !disabled && setIsOpen(true)}
-            onMouseLeave={() => setIsOpen(false)}
         >
             {Icon && <Icon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-hover:text-purple-400 transition-colors z-10 pointer-events-none" size={18} />}
             <div 
@@ -143,7 +141,11 @@ const CustomSelect = ({ value, onChange, options, placeholder, icon: Icon, disab
 };
 
 export default function ParticipantsPage() {
-  const { groups, teams, programs, participants, refreshParticipants } = useAdminData(); // Use cached participants
+  const { data: groups = [] as any[] } = useGroups();
+  const { data: teams = [] as any[] } = useTeams();
+  const { data: programs = [] as any[] } = usePrograms();
+  const { data: participants = [] as any[] } = useParticipants();
+  const { invalidateParticipants } = useInvalidate();
   const [form, setForm] = useState<{
     name: string;
     chestNumber: string;
@@ -156,6 +158,8 @@ export default function ParticipantsPage() {
   }>({ name: '', chestNumber: '', teamId: '', groupId: '', selectedPrograms: [], language: '', programId: '', image: '' });
   
   const [search, setSearch] = useState('');
+  const [filterGroupId, setFilterGroupId] = useState('');
+  const [filterTeamId, setFilterTeamId] = useState('');
   const [hoveredParticipant, setHoveredParticipant] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [viewParticipant, setViewParticipant] = useState<any>(null);
@@ -172,11 +176,44 @@ export default function ParticipantsPage() {
   
   // Filter programs based on selected language & chosen group in main form
   const filteredProgramsMain = useMemo(() => {
+    console.log('--- FILTERING PROGRAMS ---');
+    console.log('Participant form state:');
+    console.log('- form.language:', form.language);
+    console.log('- form.groupId:', form.groupId);
+    console.log('- form.groupId type:', typeof form.groupId);
+    console.log('- programs.length:', programs.length);
+    
+    programs.forEach(p => {
+        if(p.name === 'DEBUG_PROGRAM_002') {
+            console.log('--- DEBUG_PROGRAM_002 RUNTIME VALUES ---');
+            console.log('Program state:');
+            console.log('- name:', p.name);
+            console.log('- language:', p.language);
+            console.log('- groupId:', p.groupId);
+            console.log('- groupId type:', typeof p.groupId);
+            console.log('- populated groupId._id if present:', p.groupId?._id);
+            console.log('--- EXACT FILTER LOGIC TRACE ---');
+            console.log('- p.language:', p.language);
+            console.log('- form.language:', form.language);
+            console.log('- p.groupId:', p.groupId);
+            console.log('- p.groupId._id:', p.groupId?._id);
+            console.log('- form.groupId:', form.groupId);
+            console.log('- String(p.groupId?._id):', String(p.groupId?._id));
+            console.log('- String(form.groupId):', String(form.groupId));
+            console.log('Condition 1 (p.language === form.language):', p.language === form.language);
+            console.log('Condition 2 (p.groupId?._id === form.groupId):', p.groupId?._id === form.groupId);
+            console.log('Condition 3 (p.groupId === form.groupId):', p.groupId === form.groupId);
+            console.log('Overall Match:', p.language === form.language && (p.groupId?._id === form.groupId || p.groupId === form.groupId));
+        }
+    });
+
     if (!form.language || !form.groupId) return [];
-    return programs.filter(p => 
-      p.language === form.language && 
-      (p.groupId?._id === form.groupId || p.groupId === form.groupId)
-    );
+    
+    const afterLanguage = programs.filter(p => p.language === form.language);
+    console.log('-> after language filter:', afterLanguage.length);
+    const afterGroup = afterLanguage.filter(p => (p.groupId?._id === form.groupId || p.groupId === form.groupId));
+    console.log('-> after group filter:', afterGroup.length);
+    return afterGroup;
   }, [programs, form.language, form.groupId]);
 
   // Filter programs based on selected language & participant's group in modal
@@ -201,25 +238,36 @@ export default function ParticipantsPage() {
     return programs.find(p => p._id === programForm.programId);
   }, [programForm.programId, programs]);
 
+  const [partnerSearchError, setPartnerSearchError] = useState<string>('');
+
   useEffect(() => {
-    if (!selectedModalProgramOb?.isConversation || !viewParticipant?._id || !partnerSearchQ.trim()) {
+    if (!selectedModalProgramOb?.isConversation || !viewParticipant?._id) {
         setPartnerResults([]);
+        setPartnerSearchError('');
         return;
     }
+    
+    // Clear error on new search attempt
+    setPartnerSearchError('');
+
     const delayDebounceFn = setTimeout(async () => {
       setIsSearchingPartner(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/participants/search-eligible?q=${encodeURIComponent(partnerSearchQ)}&primaryId=${viewParticipant._id}`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if(res.ok) {
-            const data = await res.json();
-            // Filter out already selected partners
-            const filtered = data.filter((p: any) => !selectedPartners.some(sp => sp._id === p._id));
-            setPartnerResults(filtered);
-        }
-      } catch (e) {
+        const safeQuery = encodeURIComponent(partnerSearchQ.trim());
+        const data = await apiRequest(`/participants/search-eligible?q=${safeQuery}&primaryId=${viewParticipant._id}`);
+        // Filter out already selected partners
+        const filtered = data.filter((p: any) => !selectedPartners.some(sp => sp._id === p._id));
+        setPartnerResults(filtered);
+      } catch (e: any) {
         console.error(e);
+        setPartnerResults([]);
+        
+        // Map backend 400 message to existing UI error message
+        if (e.message && e.message.includes("Primary participant must have a Team and Group assigned")) {
+            setPartnerSearchError("Please save the participant's Team and Group changes before assigning a Pair/Group program.");
+        } else {
+            setPartnerSearchError(e.message || "Unable to load eligible participants. Please try again.");
+        }
       } finally {
         setIsSearchingPartner(false);
       }
@@ -267,7 +315,7 @@ export default function ParticipantsPage() {
         programs: finalPrograms,
         image: form.image
       });
-      refreshParticipants();
+      invalidateParticipants();
       // Keep teamId and groupId for faster entry, reset others
       setForm(prev => ({ ...prev, name: '', chestNumber: '', selectedPrograms: [], programId: '', language: '', image: '' }));
       alert('Participant added!');
@@ -280,26 +328,28 @@ export default function ParticipantsPage() {
     if (!confirm('Are you sure you want to delete this participant?')) return;
     try {
       await apiRequest(`/participants/${id}`, 'DELETE');
-      refreshParticipants();
+      invalidateParticipants();
     } catch (e: any) { alert(e.message); }
-  }, [refreshParticipants]);
+  }, [invalidateParticipants]);
 
   // Pagination & Filtering
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 60;
 
-  // Reset to page 1 when search changes
+  // Reset to page 1 when search or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search]);
+  }, [search, filterGroupId, filterTeamId]);
 
   // Memoized filtered participants
   const filteredParticipants = useMemo(() => {
-    return participants.filter(p => 
-      p.name.toLowerCase().includes(search.toLowerCase()) || 
-      p.chestNumber.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [participants, search]);
+    return participants.filter(p => {
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.chestNumber.toLowerCase().includes(search.toLowerCase());
+      const matchGroup = filterGroupId === '' || p.groupId?._id === filterGroupId || p.groupId === filterGroupId;
+      const matchTeam = filterTeamId === '' || p.teamId?._id === filterTeamId || p.teamId === filterTeamId;
+      return matchSearch && matchGroup && matchTeam;
+    });
+  }, [participants, search, filterGroupId, filterTeamId]);
 
   // Slice for current page
   const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
@@ -519,17 +569,35 @@ export default function ParticipantsPage() {
       )}
 
       {/* List Section Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-4">
-         <h2 className="text-xl font-bold text-white">All Participants <span className="text-gray-600 text-sm font-normal">({filteredParticipants.length})</span></h2>
-         <div className="relative w-full md:w-auto">
-             <input 
-                placeholder="Search participants..." 
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-10 pr-4 py-2 rounded-xl bg-[#0F1120] border border-white/[0.07] text-white focus:outline-none focus:border-purple-500 w-full md:w-64 transition-all text-sm"
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pt-4">
+         <h2 className="text-xl font-bold text-white whitespace-nowrap">All Participants <span className="text-gray-600 text-sm font-normal">({filteredParticipants.length})</span></h2>
+         <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto">
+             <CustomSelect 
+                 value={filterGroupId}
+                 onChange={(val: string) => setFilterGroupId(val)}
+                 options={groups.map(g => ({ value: g._id, label: g.name }))}
+                 placeholder="All Groups"
+                 className="w-full md:w-48 text-sm"
+                 icon={Users}
              />
-             <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+             <CustomSelect 
+                 value={filterTeamId}
+                 onChange={(val: string) => setFilterTeamId(val)}
+                 options={teams.map(t => ({ value: t._id, label: t.name }))}
+                 placeholder="All Teams"
+                 className="w-full md:w-48 text-sm"
+                 icon={Flag}
+             />
+             <div className="relative w-full md:w-64">
+                 <input 
+                    placeholder="Search participants..." 
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="pl-10 pr-4 py-2 h-[50px] rounded-xl bg-[#0F1120] border border-white/[0.07] text-white focus:outline-none focus:border-purple-500 w-full transition-all text-sm shadow-inner"
+                 />
+                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                 </div>
              </div>
          </div>
       </div>
@@ -814,7 +882,7 @@ export default function ParticipantsPage() {
                                 alert("Programs added!");
                                 setShowAddProgramModal(false);
                                 setProgramForm({ language: '', programId: '', selectedPrograms: [] });
-                                refreshParticipants();
+                                invalidateParticipants();
                             } catch(e:any) {
                                 alert(e.message);
                             }
@@ -981,6 +1049,13 @@ export default function ParticipantsPage() {
                                             />
                                             {isSearchingPartner && <div className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />}
                                         </div>
+
+                                        {partnerSearchError && (
+                                            <div className="mb-4 p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-red-400 text-sm flex items-start gap-2">
+                                                <X size={16} className="mt-0.5 shrink-0" />
+                                                <span>{partnerSearchError}</span>
+                                            </div>
+                                        )}
                                         
                                         {partnerResults.length > 0 && (
                                             <div className="flex flex-col gap-2 max-h-40 overflow-y-auto mb-4 custom-scrollbar">
@@ -1094,7 +1169,7 @@ export default function ParticipantsPage() {
                                             setSelectedPartners([]);
                                             setPartnerSearchQ('');
                                             setOfficialChestId('');
-                                            refreshParticipants();
+                                            invalidateParticipants();
                                         } catch(e:any) {
                                             alert(e.message);
                                         }
