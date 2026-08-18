@@ -36,4 +36,6 @@ const programSchema = new mongoose.Schema(
   },
 );
 
+programSchema.index({ status: 1, updatedAt: -1 });
+
 module.exports = mongoose.model("Program", programSchema);

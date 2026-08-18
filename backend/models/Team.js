@@ -26,4 +26,6 @@ const teamSchema = new mongoose.Schema(
   },
 );
 
+teamSchema.index({ totalScore: -1 });
+
 module.exports = mongoose.model("Team", teamSchema);
