@@ -241,12 +241,15 @@ export function adminScenario() {
 // When K6_VUS and K6_DURATION are passed, k6 uses the default execution model.
 export default function () {
     // Distribute VUs roughly: 10% admin, 20% judge, 70% public viewer
-    const r = Math.random();
-    if (r < 0.1) {
-        adminScenario();
-    } else if (r < 0.3) {
-        judgeScenario();
-    } else {
-        publicViewerScenario();
-    }
+    // const r = Math.random();
+    // if (r < 0.1) {
+    //     adminScenario();
+    // } else if (r < 0.3) {
+    //     judgeScenario();
+    // } else {
+    //     publicViewerScenario();
+    // }
+
+    // PUBLIC READ-ONLY TEST ONLY
+    publicViewerScenario();
 }
