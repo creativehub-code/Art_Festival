@@ -35,3 +35,7 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+#testfile 
+backend/load-tests/
+backend/scripts/seed_loadtest.jsS

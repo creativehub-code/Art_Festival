@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { Trash2, Plus, X, User, Users, Flag, Save, Layers, Grid, FileText, Globe, Image, Upload, Search, ChevronDown, List } from 'lucide-react';
+import { Trash2, Plus, X, User, Users, Flag, Save, Layers, Grid, FileText, Globe, Image, Upload, Search, ChevronDown, List, MoreVertical, Calendar } from 'lucide-react';
 import { useGroups, useTeams, usePrograms, useParticipants, useInvalidate } from '@/lib/queries';
 
 // Memoized Row Component to prevent full table re-renders on hover
@@ -614,32 +614,63 @@ export default function ParticipantsPage() {
                 <p className="text-gray-500 max-w-sm mx-auto">Try adding a new participant, or check your search term if you're filtering.</p>
             </div>
       ) : (
-       <div className="bg-[#0F1120] rounded-2xl border border-white/[0.07] overflow-hidden shadow-xl">
+       <div className="w-full mt-4">
         
+        {/* Desktop Table Header */}
+        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
+          <div className="col-span-1">#</div>
+          <div className="col-span-2">Participant Code</div>
+          <div className="col-span-3">Participant Name</div>
+          <div className="col-span-2">Group</div>
+          <div className="col-span-2">Team</div>
+          <div className="col-span-1">Events</div>
+          <div className="col-span-1 text-right">Actions</div>
+        </div>
+
         {/* Desktop - Exact card-row style from reference photo */}
-        <div className="hidden md:block p-4 space-y-2">
+        <div className="hidden md:block space-y-2.5">
           {paginatedParticipants.map((p, index) => {
             const absoluteIndex = (currentPage - 1) * itemsPerPage + index;
             const displayIndex = filteredParticipants.length - absoluteIndex; 
+            const formattedIndex = String(displayIndex).padStart(2, '0');
+
+            // Left border accent colors matching the screenshot
+            const borderAccents = [
+              'border-l-purple-500',
+              'border-l-purple-500',
+              'border-l-amber-500',
+              'border-l-amber-500',
+              'border-l-blue-500',
+              'border-l-blue-500',
+              'border-l-indigo-500',
+              'border-l-indigo-500',
+            ];
+            const leftBorderClass = borderAccents[index % borderAccents.length];
+
             return (
               <div
                 key={p._id}
-                className="flex items-center gap-4 px-5 py-4 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer hover:border-purple-500/30 hover:bg-[#161830] transition-all duration-200 group"
+                className={`grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
                 onMouseEnter={() => setHoveredParticipant(p._id)}
                 onMouseLeave={() => setHoveredParticipant(null)}
                 onClick={() => setViewParticipant(p)}
               >
-                {/* Chest Number Badge */}
-                <div className="flex-shrink-0">
-                  <div className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#0F1120] border border-white/[0.1] text-purple-300 font-mono text-sm font-bold min-w-[80px] text-center">
+                {/* # Index */}
+                <div className="col-span-1 flex items-center">
+                  <span className="text-gray-400 font-mono text-xs font-bold">{formattedIndex}</span>
+                </div>
+
+                {/* Participant Code / Chest Number */}
+                <div className="col-span-2 flex items-center">
+                  <span className="inline-flex items-center px-3 py-1 rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-300 font-mono text-xs font-bold tracking-wide">
                     {p.chestNumber}
-                  </div>
+                  </span>
                 </div>
 
                 {/* Avatar + Name */}
-                <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="col-span-3 flex items-center gap-3 min-w-0">
                   <div className="relative w-8 h-8 flex-shrink-0">
-                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white">
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white shadow">
                       {p.name.charAt(0)}
                     </div>
                     <img
@@ -650,43 +681,48 @@ export default function ParticipantsPage() {
                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                   </div>
-                  <span className="font-semibold text-gray-100 group-hover:text-white transition-colors text-base truncate">
+                  <span className="font-semibold text-gray-200 group-hover:text-white transition-colors text-sm truncate uppercase tracking-tight">
                     {p.name}
                   </span>
                 </div>
 
                 {/* Group Badge */}
-                <div className="flex-shrink-0">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
-                    p.groupId?.name === 'Senior' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                    p.groupId?.name === 'Junior' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                    p.groupId?.name ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                    'bg-white/[0.06] text-gray-500 border-white/[0.08]'
-                  }`}>
-                    {p.groupId?.name || 'No Group'}
+                <div className="col-span-2 flex items-center">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border bg-amber-500/10 text-amber-400 border-amber-500/30 uppercase tracking-wider">
+                    <Users size={13} />
+                    <span className="truncate">{p.groupId?.name || 'No Group'}</span>
                   </span>
                 </div>
 
-                {/* Events */}
-                <div className="flex-shrink-0 w-44">
-                  {p.programs?.length > 0 ? (
-                    <div className="flex items-center gap-2 text-gray-400 text-sm">
-                      <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
-                      {p.programs.length} Events Registered
-                    </div>
-                  ) : (
-                    <span className="text-gray-600 text-sm">No events</span>
-                  )}
+                {/* Team Badge */}
+                <div className="col-span-2 flex items-center">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border bg-purple-500/10 text-purple-400 border-purple-500/30 uppercase tracking-wider">
+                    <Flag size={13} />
+                    <span className="truncate">{p.teamId?.name || 'No Team'}</span>
+                  </span>
                 </div>
 
-                {/* Delete / 3-dot menu */}
-                <div className="flex-shrink-0">
+                {/* Assigned Programs / Events */}
+                <div className="col-span-1 flex items-center">
+                  <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                    <Calendar size={14} className="text-gray-500 shrink-0" />
+                    <div className="flex flex-col text-[10px] leading-tight">
+                      <span className="text-gray-300 font-medium whitespace-nowrap">
+                        {p.programs?.length > 0 ? `${p.programs.length} Events` : 'No events'}
+                      </span>
+                      <span className="text-gray-500 text-[9px]">{p.programs?.length || 0} assigned</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions / 3-dot Menu */}
+                <div className="col-span-1 flex items-center justify-end">
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDelete(p._id); }}
-                    className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                    title="Delete"
+                    className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                    title="Actions / Delete"
                   >
-                    <Trash2 size={16} />
+                    <MoreVertical size={16} />
                   </button>
                 </div>
               </div>
