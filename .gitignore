@@ -1,8 +1,8 @@
-
 # Environment
 .env
 .env.*
 !.env.example
+*service-account*.json
 
 # Dependencies
 node_modules/
@@ -29,12 +29,14 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Temporary files
+# Temporary files & Scratch
 *.tmp
 *.temp
 *.bak
+scratch/
+scratch_*.js
+test_*.js
 
 # Test artifacts
 playwright-report/
 test-results/
-scratch/

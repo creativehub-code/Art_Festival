@@ -4,11 +4,17 @@ import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users } from 'lucide-react';
 import { usePrograms, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
+import ToastContainer from '@/components/ToastContainer';
+import ConfirmModal from '@/components/ConfirmModal';
+import { useToast } from '@/lib/useToast';
 
 export default function ProgramsPage() {
   const { data: programs = [], isLoading: loadingPrograms } = usePrograms();
   const { data: groups = [] as any[] } = useGroups();
   const { invalidatePrograms } = useInvalidate();
+  const { toasts, addToast, dismissToast } = useToast();
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   const loading = loadingPrograms;
   const [selectedGroupFilters, setSelectedGroupFilters] = useState<Record<string, string>>({});
   
@@ -20,15 +26,25 @@ export default function ProgramsPage() {
     try {
       await apiRequest(`/programs/${id}`, 'PATCH', { status: newStatus });
       invalidatePrograms();
-    } catch (e: any) { alert(e.message); }
+      addToast({ title: 'Status Updated', message: `Program status changed to ${newStatus}`, type: 'success' });
+    } catch (e: any) { addToast({ title: 'Update Error', message: e.message || 'Failed to update status', type: 'error' }); }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this program?')) return;
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteProgram = async () => {
+    if (!deleteConfirmId) return;
     try {
-      await apiRequest(`/programs/${id}`, 'DELETE');
+      await apiRequest(`/programs/${deleteConfirmId}`, 'DELETE');
       invalidatePrograms();
-    } catch (e: any) { alert(e.message); }
+      addToast({ title: 'Program Deleted', message: 'Program deleted successfully.', type: 'info' });
+    } catch (e: any) { 
+      addToast({ title: 'Delete Failed', message: e.message || 'Failed to delete program', type: 'error' }); 
+    } finally {
+      setDeleteConfirmId(null);
+    }
   };
 
   const openModal = (language: string = '') => {
@@ -85,7 +101,7 @@ export default function ProgramsPage() {
 
             return (
                 <div key={language}>
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-gray-800 pb-2 gap-4">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                         <div className="flex items-center gap-4">
                             <h3 className="text-3xl font-bold text-purple-400">{language} Programs</h3>
                             <button 
@@ -116,95 +132,163 @@ export default function ProgramsPage() {
                             ))}
                         </div>
                     </div>
-                     <div className="bg-[#1E1B2E] rounded-2xl border border-[#2D283E] overflow-hidden shadow-xl">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="border-b border-[#2D283E] text-gray-400 bg-[#13111C]">
-                                    <th className="p-4 w-16">#</th>
-                                    <th className="p-4">Program Name</th>
-                                    <th className="p-4">Group</th>
-                                    <th className="p-4">Status</th>
-                                    <th className="w-16"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {langPrograms.length > 0 ? (
-                                    langPrograms.map((p, index, arr) => (
-                                        <tr 
+                    <div className="space-y-2">
+                        {/* Desktop Header */}
+                        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
+                            <div className="col-span-1">#</div>
+                            <div className="col-span-5">Program Name</div>
+                            <div className="col-span-3">Group</div>
+                            <div className="col-span-2">Status</div>
+                            <div className="col-span-1 text-right">Actions</div>
+                        </div>
+
+                        {/* Desktop List */}
+                        <div className="hidden md:block space-y-2.5">
+                            {langPrograms.length > 0 ? (
+                                langPrograms.map((p, index, arr) => {
+                                    const formattedIndex = String(arr.length - index).padStart(2, '0');
+                                    const borderAccents = [
+                                        'border-l-purple-500',
+                                        'border-l-amber-500',
+                                        'border-l-blue-500',
+                                        'border-l-indigo-500',
+                                    ];
+                                    const leftBorderClass = borderAccents[index % borderAccents.length];
+
+                                    return (
+                                        <div 
                                             key={p._id} 
-                                            className="border-b border-[#2D283E]/50 hover:bg-[#252236] transition-colors group cursor-pointer"
+                                            className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
+                                            style={{ animationDelay: `${index * 50}ms` }}
                                             onClick={() => setViewProgram(p)}
                                         >
-                                            <td className="p-4 text-gray-500">{arr.length - index}</td>
-                                            <td className="p-4 font-medium text-white text-lg group-hover:text-purple-400 transition-colors flex items-center gap-2">
-                                                {p.name}
+                                            <div className="col-span-1 flex items-center">
+                                                <span className="text-gray-400 font-mono text-xs font-bold">{formattedIndex}</span>
+                                            </div>
+                                            
+                                            <div className="col-span-5 flex items-center gap-2 min-w-0">
+                                                <span className="font-semibold text-gray-200 group-hover:text-white transition-colors text-sm truncate tracking-tight">
+                                                    {p.name}
+                                                </span>
                                                 {p.isConversation && (
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full">
                                                         <Users size={10} /> Pair
                                                     </span>
                                                 )}
-                                                <Users size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500" />
-                                            </td>
-                                            <td className="p-4 text-gray-400">{p.groupId?.name || '-'}</td>
-                                            <td className="p-4" onClick={e => e.stopPropagation()}>
+                                                <Users size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hidden md:block" />
+                                            </div>
+
+                                            <div className="col-span-3 flex items-center">
+                                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border bg-purple-500/10 text-purple-400 border-purple-500/30 uppercase tracking-wider">
+                                                    <span className="truncate">{p.groupId?.name || '-'}</span>
+                                                </span>
+                                            </div>
+
+                                            <div className="col-span-2 flex items-center" onClick={e => e.stopPropagation()}>
                                                  <select 
                                                     value={p.status || 'upcoming'}
                                                     onChange={(e) => handleStatusUpdate(p._id, e.target.value)}
-                                                    className={`p-1.5 pl-3 pr-8 rounded-lg text-sm bg-[#13111C] border border-gray-700 outline-none cursor-pointer appearance-none transition-colors ${
+                                                    className={`p-1.5 pl-3 pr-8 rounded-lg text-[10px] font-bold uppercase tracking-wider outline-none cursor-pointer appearance-none transition-colors border ${
                                                         p.status === 'ongoing' ? 'text-yellow-500 border-yellow-500/30 bg-yellow-500/5' :
                                                         p.status === 'completed' ? 'text-green-500 border-green-500/30 bg-green-500/5' :
                                                         'text-blue-500 border-blue-500/30 bg-blue-500/5'
                                                     }`}
                                                 >
-                                                    <option value="upcoming" className="bg-[#13111C] text-gray-300">Upcoming</option>
-                                                    <option value="ongoing" className="bg-[#13111C] text-yellow-500">Ongoing</option>
-                                                    <option value="completed" className="bg-[#13111C] text-green-500">Completed</option>
+                                                    <option value="upcoming" className="bg-[#13111C] text-gray-300">UPCOMING</option>
+                                                    <option value="ongoing" className="bg-[#13111C] text-yellow-500">ONGOING</option>
+                                                    <option value="completed" className="bg-[#13111C] text-green-500">COMPLETED</option>
                                                 </select>
-                                            </td>
-                                            <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
+                                            </div>
+
+                                            <div className="col-span-1 flex items-center justify-end" onClick={e => e.stopPropagation()}>
                                                  <button 
                                                     onClick={() => handleDelete(p._id)}
                                                     className="text-gray-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"
                                                     title="Delete Program"
                                                 >
-                                                    <Trash2 size={18} />
+                                                    <Trash2 size={16} />
                                                 </button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan={5} className="p-16 text-center text-gray-500 bg-[#13111C]/30">
-                                            <div className="flex flex-col items-center justify-center gap-4">
-                                                <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center border border-gray-800 shadow-inner">
-                                                    <FileText size={24} className="text-purple-500/50" />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <p className="text-lg font-medium text-gray-300">No {language} programs created yet</p>
-                                                    <p className="text-sm">Click the + button above to add one.</p>
-                                                </div>
                                             </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="py-16 text-center text-gray-500 bg-[#13111C]/30 rounded-xl border border-white/[0.06]">
+                                    <div className="flex flex-col items-center justify-center gap-4">
+                                        <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center border border-gray-800 shadow-inner">
+                                            <FileText size={24} className="text-purple-500/50" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-lg font-medium text-gray-300">No {language} programs created yet</p>
+                                            <p className="text-sm">Click the + button above to add one.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Mobile list view */}
+                        <div className="md:hidden space-y-2">
+                            {langPrograms.length > 0 ? (
+                                langPrograms.map((p: any, index: number, arr: any[]) => (
+                                    <div key={p._id} className="flex items-center gap-3 px-4 py-3 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer" onClick={() => setViewProgram(p)}>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-gray-200 text-sm truncate flex items-center gap-2">
+                                                {p.name}
+                                                {p.isConversation && (
+                                                    <Users size={12} className="text-indigo-400" />
+                                                )}
+                                            </p>
+                                            <p className="text-gray-500 text-xs mt-0.5">{p.groupId?.name || '-'}</p>
+                                        </div>
+                                        <div onClick={e => e.stopPropagation()}>
+                                            <select 
+                                                value={p.status || 'upcoming'}
+                                                onChange={(e) => handleStatusUpdate(p._id, e.target.value)}
+                                                className={`p-1 px-2 rounded border text-[10px] font-bold uppercase tracking-wider outline-none ${
+                                                    p.status === 'ongoing' ? 'text-yellow-500 border-yellow-500/30 bg-yellow-500/5' :
+                                                    p.status === 'completed' ? 'text-green-500 border-green-500/30 bg-green-500/5' :
+                                                    'text-blue-500 border-blue-500/30 bg-blue-500/5'
+                                                }`}
+                                            >
+                                                <option value="upcoming" className="bg-[#13111C]">UPCOMING</option>
+                                                <option value="ongoing" className="bg-[#13111C]">ONGOING</option>
+                                                <option value="completed" className="bg-[#13111C]">COMPLETED</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="py-8 text-center text-gray-500 bg-[#13111C]/30 rounded-xl border border-white/[0.06]">
+                                    <FileText size={24} className="mx-auto mb-2 opacity-50" />
+                                    <p className="text-sm">No programs found.</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )
         })}
       </div>
 
-      {/* Create Program Modal */}
-      {isModalOpen && (
-        <CreateProgramModal 
+      {/* Modal */}
+      <CreateProgramModal 
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           defaultLanguage={modalDefaultLanguage}
           groups={groups}
-          onSuccess={async () => invalidatePrograms()}
-        />
-      )}
+          refreshPrograms={invalidatePrograms}
+          addToast={addToast}
+      />
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Program"
+        message="Are you sure you want to delete this program? This action cannot be undone."
+        confirmText="Delete"
+        onConfirm={confirmDeleteProgram}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* View Participants Modal */}
       {viewProgram && (
@@ -280,12 +364,13 @@ export default function ProgramsPage() {
   );
 }
 
-function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, onSuccess }: { 
+function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshPrograms, addToast }: { 
     isOpen: boolean; 
     onClose: () => void; 
     defaultLanguage: string;
     groups: any[];
-    onSuccess: () => Promise<void>;
+    refreshPrograms: () => void;
+    addToast: any;
 }) {
     const [form, setForm] = useState({
         name: '',
@@ -311,7 +396,9 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, onSucces
         setLoading(true);
         try {
             await apiRequest('/programs', 'POST', form);
-            await onSuccess();
+            refreshPrograms();
+            addToast({ title: 'Success', message: 'Program created successfully!', type: 'success' });
+            
             if (createMultiple) {
                 // Keep language and group, clear name
                 setForm(prev => ({ ...prev, name: '' }));
@@ -321,7 +408,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, onSucces
                 onClose();
             }
         } catch (e: any) {
-            alert(e.message);
+            addToast({ title: 'Creation Error', message: e.message || 'Failed to create program', type: 'error' });
         } finally {
             setLoading(false);
         }

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Program = require("../models/Program");
 const JudgeMark = require("../models/JudgeMark");
 const JudgeGroup = require("../models/JudgeGroup");
+const Participant = require("../models/Participant");
 
 const getPrograms = async (req, res) => {
   try {
@@ -32,18 +33,28 @@ const getPrograms = async (req, res) => {
       }
     });
 
-    // 4. Combine data and sort
+    // 4. Participant counts per program — single aggregation, no N+1
+    const participantCounts = await Participant.aggregate([
+      { $unwind: '$programs' },
+      { $group: { _id: '$programs', participantCount: { $sum: 1 } } },
+    ]);
+    const participantCountMap = Object.fromEntries(
+      participantCounts.map(p => [p._id.toString(), p.participantCount])
+    );
+
+    // 5. Combine data and sort
     const programsWithMarkStatus = programs.map(program => {
       const pidStr = program._id.toString();
       return {
         ...program.toObject(),
         hasMarks: hasMarksSet.has(pidStr),
         submittedCount: markStatsMap[pidStr] || 0,
-        totalAssigned: programAssignmentMap[pidStr] ? programAssignmentMap[pidStr].size : 0
+        totalAssigned: programAssignmentMap[pidStr] ? programAssignmentMap[pidStr].size : 0,
+        participantCount: participantCountMap[pidStr] || 0,
       };
     });
 
-    // 5. Sort by Category (Senior, Junior, etc.) and then Name
+    // 6. Sort by Category (Senior, Junior, etc.) and then Name
     programsWithMarkStatus.sort((a, b) => {
       const catA = a.groupId?.name || "";
       const catB = b.groupId?.name || "";
@@ -172,10 +183,46 @@ const getPublicPrograms = async (req, res) => {
   }
 };
 
+// @desc    Get participants registered for a specific program (Lightweight - No Image)
+// @route   GET /api/programs/:programId/participants
+// @access  Protected (Judge / Admin)
+const getProgramParticipants = async (req, res) => {
+  try {
+    const { programId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return res.status(400).json({ message: "Invalid program ID format" });
+    }
+
+    const program = await Program.findById(programId);
+    if (!program) {
+      return res.status(404).json({ message: "Program not found" });
+    }
+
+    const query = { programs: programId };
+    if (program.groupId) {
+      query.groupId = program.groupId;
+    }
+
+    const participants = await Participant.find(query)
+      .select("-image")
+      .populate("teamId", "name")
+      .populate("groupId", "name")
+      .populate("programs", "name language")
+      .sort({ chestNumber: 1, name: 1 });
+
+    res.json(participants);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getPrograms,
   createProgram,
   updateProgram,
   deleteProgram,
   getPublicPrograms,
+  getProgramParticipants,
 };
+

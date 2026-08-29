@@ -39,4 +39,12 @@ const participantSchema = new mongoose.Schema(
   },
 );
 
+participantSchema.index({ teamId: 1 });
+participantSchema.index({ groupId: 1 });
+participantSchema.index({ programs: 1 }); // Used by review marks participant-count aggregation
+
+// Indexes for Individual Marks ranking
+participantSchema.index({ totalScore: -1, _id: 1 });
+participantSchema.index({ groupId: 1, totalScore: -1, _id: 1 });
+
 module.exports = mongoose.model("Participant", participantSchema);

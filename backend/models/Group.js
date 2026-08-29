@@ -7,12 +7,6 @@ const groupSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    participantIds: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Participant",
-      },
-    ],
     totalScore: {
       type: Number,
       default: 0,

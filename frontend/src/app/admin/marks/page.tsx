@@ -1,15 +1,18 @@
 'use client';
 
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud } from 'lucide-react';
-import { usePrograms, useGroups, useInvalidate, useSettings, useMarks, useConversationPairs } from '@/lib/queries';
+import { useReviewPrograms, useReviewProgramMarks, useGroups, useInvalidate, useSettings, useConversationPairs } from '@/lib/queries';
 import ToastContainer, { type ToastData } from '@/components/ToastContainer';
+import ConfirmModal from '@/components/ConfirmModal';
+
+const DEFAULT_SETTINGS = { firstPlacePoints: 5, secondPlacePoints: 3, thirdPlacePoints: 1 };
 
 export default function MarksReviewPage() {
-  const { data: programs = [] as any[] } = usePrograms();
+  const { data: programs = [] as any[] } = useReviewPrograms();
   const { data: groups = [] as any[] } = useGroups();
-  const { invalidatePrograms, invalidateTeams, invalidateParticipants } = useInvalidate();
+  const { invalidatePrograms, invalidateTeams, invalidateParticipants, invalidateReviewPrograms, invalidateReviewProgramMarks, invalidateIndividualRankings } = useInvalidate();
   const refreshPrograms = invalidatePrograms;
   const refreshTeams = invalidateTeams;
   const refreshParticipants = invalidateParticipants;
@@ -19,6 +22,7 @@ export default function MarksReviewPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [verifiedPrograms, setVerifiedPrograms] = useState<Set<string>>(new Set());
   const [verifyResults, setVerifyResults] = useState<any[] | null>(null); // position results after verify
+  const [showCalculateConfirm, setShowCalculateConfirm] = useState(false);
 
   
   // SSE connection ref — used to abort the stream on cleanup/program-change
@@ -45,12 +49,18 @@ export default function MarksReviewPage() {
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
   const [selectedProgramData, setSelectedProgramData] = useState<any>(null);
 
+  // Pagination and search state for the program detail (marks) view
+  const [marksPage, setMarksPage] = useState(1);
+  const marksLimit = 50;
+  const [detailSearch, setDetailSearch] = useState('');
+  const [detailSearchInput, setDetailSearchInput] = useState('');
+
   // Mark Action Handlers
   const handleMarkAction = async (markId: string, action: 'approve' | 'reject' | 'edit', newMarkValue?: number, reason?: string) => {
       try {
           if (action === 'edit') {
               if (newMarkValue === undefined || !reason) {
-                  return alert("New mark and reason are required for edits.");
+                  return addToast({ title: 'Validation Error', message: "New mark and reason are required for edits.", type: 'warning' });
               }
               await apiRequest(`/marks/${markId}`, 'PATCH', { newMark: newMarkValue, reason });
               addToast({ judgeName: 'System', programName: 'Mark updated successfully', language: '' });
@@ -59,14 +69,17 @@ export default function MarksReviewPage() {
               await apiRequest(`/marks/${markId}/status`, 'PATCH', { status });
               addToast({ judgeName: 'System', programName: `Mark ${status} successfully`, language: '' });
           }
-          await refreshMarks();
+          // Targeted cache invalidation — only refresh the current program's marks
+          if (selectedProgram) {
+            invalidateReviewProgramMarks(selectedProgram);
+          }
       } catch (e: any) {
-          alert(e.message);
+          addToast({ title: 'Mark Action Failed', message: e.message, type: 'error' });
       }
   };
 
   // TanStack Query Hooks replacing local state
-  const { data: serverSettings = { firstPlacePoints: 5, secondPlacePoints: 3, thirdPlacePoints: 1 } } = useSettings();
+  const { data: serverSettings = DEFAULT_SETTINGS } = useSettings();
   const [settings, setSettings] = React.useState(serverSettings);
   const [isSettingsOpen, setIsSettingsOpen] = React.useState(false);
   const [savingSettings, setSavingSettings] = React.useState(false);
@@ -74,7 +87,7 @@ export default function MarksReviewPage() {
   React.useEffect(() => {
       setSettings(serverSettings);
   }, [serverSettings]);
-  const { data: marksData, isLoading: marksLoading, refetch: refreshMarks } = useMarks(selectedProgram);
+  const { data: marksData, isLoading: marksLoading, refetch: refreshMarks } = useReviewProgramMarks(selectedProgram, marksPage, marksLimit, detailSearch);
   const { data: conversationPairs = [] as any[] } = useConversationPairs(selectedProgram, !!selectedProgramData?.isConversation);
   
   const marks = marksData?.marks || [];
@@ -96,7 +109,19 @@ export default function MarksReviewPage() {
     setSelectedProgram(program._id);
     setSelectedProgramData(program);
     setViewMode('details');
+    setMarksPage(1);       // reset pagination when switching programs
+    setDetailSearch('');   // reset server-side search
+    setDetailSearchInput('');
   };
+
+  // Debounce the detail search input — resets to page 1 on new search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDetailSearch(detailSearchInput);
+      setMarksPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [detailSearchInput]);
 
 
 
@@ -169,14 +194,19 @@ export default function MarksReviewPage() {
     return sortedParticipants;
   }, [marks]);
 
-  const handleCalculate = async () => {
-    if (!confirm('This will recalculate scores for all teams based on these marks. Continue?')) return;
+  const handleCalculate = () => {
+    setShowCalculateConfirm(true);
+  };
+
+  const confirmCalculateScores = async () => {
+    setShowCalculateConfirm(false);
     setVerifying(true);
     setVerifyResults(null); // Clear previous results
     try {
        const result = await apiRequest(`/marks/calculate/${selectedProgram}`, 'POST');
        await refreshTeams();
        await refreshParticipants();
+       invalidateIndividualRankings(); // Clear the caching for the main Ranking UI
        await refreshPrograms();
        
        // Update local selected program data to reflect the new state so it updates immediately
@@ -191,7 +221,7 @@ export default function MarksReviewPage() {
          addToast({ judgeName: 'System', programName: 'Scores recalculated', language: '' });
        }
     } catch(e: any) {
-        alert(e.message);
+        addToast({ title: 'Calculation Error', message: e.message, type: 'error' });
     } finally {
         setVerifying(false);
     }
@@ -219,9 +249,9 @@ export default function MarksReviewPage() {
     setIsSyncing(true);
     try {
         const response = await apiRequest(`/marks/export-sheets/${selectedProgram}`, 'POST');
-        alert(response.message || 'Successfully synced with Google Sheets!');
+        addToast({ title: 'Sync Successful', message: response.message || 'Successfully synced with Google Sheets!', type: 'success' });
     } catch (e: any) {
-        alert(e.message || 'Failed to sync with Google Sheets');
+        addToast({ title: 'Sync Error', message: e.message || 'Failed to sync with Google Sheets', type: 'error' });
     } finally {
         setIsSyncing(false);
     }
@@ -232,9 +262,9 @@ export default function MarksReviewPage() {
       try {
           await apiRequest('/settings', 'PUT', settings);
           setIsSettingsOpen(false);
-          alert('Points Configuration Saved!');
+          addToast({ title: 'Settings Saved', message: 'Points Configuration Saved!', type: 'success' });
       } catch (e: any) {
-          alert(e.message);
+          addToast({ title: 'Save Error', message: e.message || 'Failed to save settings', type: 'error' });
       } finally {
           setSavingSettings(false);
       }
@@ -436,157 +466,205 @@ export default function MarksReviewPage() {
         {/* Dynamic Content */}
         <div className="relative min-h-[400px]">
             {viewMode === 'dashboard' ? (
-                <div className="bg-[#1E1B2E] rounded-2xl overflow-hidden border border-[#2D283E] shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-[#1A1825] border-b border-[#2D283E]">
-                                <tr>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500">Program Name</th>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500">Language</th>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500">Judge Submissions</th>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#2D283E]">
-                                {Object.keys(groupedPrograms).length > 0 ? (
-                                    Object.entries(groupedPrograms).map(([catName, progs]) => (
-                                        <React.Fragment key={catName}>
-                                            {/* Category Header Row */}
-                                            <tr className="bg-[#13111C]/50">
-                                                <td colSpan={5} className="px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-purple-500/50 border-y border-[#2D283E]/50">
-                                                    {catName}
-                                                </td>
-                                            </tr>
-                                            {progs.map(p => (
-                                                <tr 
-                                                    key={p._id} 
-                                                    onClick={() => handleProgramSelect(p)}
-                                                    className="hover:bg-[#252236] transition-all cursor-pointer group"
-                                                >
-                                                    <td className="p-5">
-                                                        <div className="font-bold text-white group-hover:text-purple-400 transition-colors text-lg uppercase tracking-tight leading-none">{p.name}</div>
-                                                        <div className="flex items-center gap-2 mt-1">
-                                                            <span className="text-[10px] text-gray-600 font-mono">#{p._id.slice(-6)}</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-5">
-                                                        <span className={`px-2.5 py-1 rounded text-[10px] uppercase font-black border tracking-wider ${getLangColor(p.language)}`}>
-                                                            {p.language}
-                                                        </span>
-                                                    </td>
-                                                    <td className="p-5">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-32 h-2 bg-gray-800 rounded-full overflow-hidden border border-gray-700/50">
-                                                                <div 
-                                                                    className="h-full bg-gradient-to-r from-purple-600 to-pink-500 transition-all duration-500"
-                                                                    style={{ width: `${(p.submittedCount / (p.totalAssigned || 1)) * 100}%` }}
-                                                                />
-                                                            </div>
-                                                            <span className="text-sm font-mono font-bold text-gray-300">
-                                                                {p.submittedCount}/{p.totalAssigned || '-'}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-5">
-                                                        {p.status === 'completed' ? (
-                                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 text-green-400 text-xs font-bold border border-green-500/20">
-                                                                <CheckCircle size={12} /> Verified
-                                                            </span>
-                                                        ) : p.hasMarks ? (
-                                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-bold border border-amber-500/20">
-                                                                <Clock size={12} /> Pending Review
-                                                            </span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-500/10 text-gray-500 text-xs font-bold border border-gray-500/20">
-                                                                <Clock size={12} /> No Marks
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-5 text-right">
-                                                        <button className="bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white px-4 py-2 rounded-xl text-xs font-black transition-all border border-purple-500/20 group-hover:scale-105 active:scale-95 shadow-lg shadow-purple-900/10">
-                                                            REVIEW MARKS
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </React.Fragment>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan={5} className="p-20 text-center text-gray-500">
-                                            <div className="flex flex-col items-center gap-3">
-                                                <Search size={48} className="opacity-10" />
-                                                <p className="text-lg font-medium">No programs found matching your filters.</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    {/* Desktop Header */}
+                    <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
+                        <div className="col-span-4">Program Name</div>
+                        <div className="col-span-2">Language</div>
+                        <div className="col-span-3">Judge Submissions</div>
+                        <div className="col-span-2">Status</div>
+                        <div className="col-span-1 text-right">Actions</div>
                     </div>
+
+                    {Object.keys(groupedPrograms).length > 0 ? (
+                        Object.entries(groupedPrograms).map(([catName, progs]) => (
+                            <div key={catName} className="space-y-2.5">
+                                <div className="px-6 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-purple-500/50 mt-4 first:mt-0">
+                                    {catName}
+                                </div>
+                                
+                                <div className="hidden md:block space-y-2.5">
+                                    {progs.map((p, index) => {
+                                        const borderAccents = ['border-l-purple-500', 'border-l-amber-500', 'border-l-blue-500', 'border-l-indigo-500'];
+                                        const leftBorderClass = borderAccents[index % borderAccents.length];
+                                        return (
+                                            <div 
+                                                key={p._id} 
+                                                onClick={() => handleProgramSelect(p)}
+                                                className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-4 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
+                                                style={{ animationDelay: `${index * 50}ms` }}
+                                            >
+                                                {/* Program Name */}
+                                                <div className="col-span-4">
+                                                    <div className="font-bold text-white group-hover:text-purple-400 transition-colors text-lg uppercase tracking-tight leading-none truncate">{p.name}</div>
+                                                    <div className="flex items-center gap-2 mt-1.5">
+                                                        <span className="text-[10px] text-gray-500 font-mono">#{p._id.slice(-6)}</span>
+                                                        {(p.participantCount ?? 0) > 0 && (
+                                                          <span className="text-[10px] text-blue-400/60">· {p.participantCount} participants</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Language */}
+                                                <div className="col-span-2 flex items-center">
+                                                    <span className={`px-2.5 py-1 rounded text-[10px] uppercase font-black border tracking-wider ${getLangColor(p.language)}`}>
+                                                        {p.language}
+                                                    </span>
+                                                </div>
+
+                                                {/* Submissions */}
+                                                <div className="col-span-3 flex items-center">
+                                                    <div className="flex items-center gap-3 w-full max-w-[200px]">
+                                                        <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden border border-gray-700/50">
+                                                            <div 
+                                                                className="h-full bg-gradient-to-r from-purple-600 to-pink-500 transition-all duration-500"
+                                                                style={{ width: `${(p.submittedCount / (p.totalAssigned || 1)) * 100}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="text-sm font-mono font-bold text-gray-300">
+                                                            {p.submittedCount}/{p.totalAssigned || '-'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Status */}
+                                                <div className="col-span-2 flex items-center">
+                                                    {p.status === 'completed' ? (
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-green-500/10 text-green-400 text-[10px] font-bold border border-green-500/20 uppercase tracking-wider">
+                                                            <CheckCircle size={12} /> Verified
+                                                        </span>
+                                                    ) : p.hasMarks ? (
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/10 text-amber-400 text-[10px] font-bold border border-amber-500/20 uppercase tracking-wider">
+                                                            <Clock size={12} /> Pending Review
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gray-500/10 text-gray-500 text-[10px] font-bold border border-gray-500/20 uppercase tracking-wider">
+                                                            <Clock size={12} /> No Marks
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Actions */}
+                                                <div className="col-span-1 flex items-center justify-end">
+                                                    <button className="bg-purple-600/10 hover:bg-purple-600 text-purple-400 hover:text-white px-3 py-1.5 rounded-lg text-[10px] font-black transition-all border border-purple-500/20 group-hover:scale-105 active:scale-95 shadow-sm">
+                                                        REVIEW
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                
+                                {/* Mobile view mapping */}
+                                <div className="md:hidden space-y-2">
+                                    {progs.map((p, index) => (
+                                        <div 
+                                            key={p._id} 
+                                            onClick={() => handleProgramSelect(p)}
+                                            className="flex flex-col gap-3 px-4 py-3 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer"
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="font-bold text-white text-sm uppercase">{p.name}</h4>
+                                                    <span className="text-[10px] text-gray-500 font-mono block mt-0.5">#{p._id.slice(-6)}</span>
+                                                </div>
+                                                <span className={`px-2 py-0.5 rounded text-[9px] uppercase font-black border tracking-wider ${getLangColor(p.language)}`}>
+                                                    {p.language}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-mono font-bold text-gray-300">
+                                                        {p.submittedCount}/{p.totalAssigned || '-'} Submissions
+                                                    </span>
+                                                </div>
+                                                <button className="bg-purple-600/10 text-purple-400 px-3 py-1 rounded-lg text-[10px] font-black">
+                                                    REVIEW
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="py-20 text-center text-gray-500 bg-[#13111C]/30 rounded-xl border border-white/[0.06]">
+                            <div className="flex flex-col items-center gap-3">
+                                <Search size={48} className="opacity-10" />
+                                <p className="text-lg font-medium">No programs found matching your filters.</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
-                <div className="bg-[#1E1B2E] rounded-2xl overflow-hidden border border-[#2D283E] shadow-2xl animate-in slide-in-from-right-8 fade-in duration-500">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-[#1A1825] border-b border-[#2D283E]">
-                                <tr>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500">Participant</th>
-                                    {assignedJudges.length > 0 ? (
-                                        assignedJudges.map((judge: any) => (
-                                            <th key={judge._id} className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">
-                                                {judge.name}
-                                            </th>
-                                        ))
-                                    ) : (
-                                        <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 w-1/3">Judges' Breakdown</th>
-                                    )}
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 text-center">Total Score</th>
-                                    <th className="p-5 text-xs font-bold uppercase tracking-wider text-gray-500 text-right">Rank</th>
-                                </tr>
-                            </thead>
-                        <tbody className="divide-y divide-[#2D283E]">
-                            {marksLoading ? (
-                                <tr>
-                                    <td colSpan={4} className="p-16 text-center relative">
-                                        {marksLoading && (
-                                            <div className="absolute inset-0 bg-[#0F0D15]/80 backdrop-blur-sm flex items-center justify-center z-10 rounded-xl border border-white/5">
-                                                <RefreshCw size={32} className="animate-spin text-purple-500" />
+                <div className="space-y-4 animate-in slide-in-from-right-8 fade-in duration-500">
+
+                    {/* Detail view participant/chest search — server-side filtered */}
+                    <div className="relative w-full md:w-80">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                        <input
+                            className="w-full bg-[#1E1B2E] border border-gray-700 rounded-xl pl-12 pr-4 py-2.5 text-white text-sm focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600"
+                            placeholder="Search participants or chest no..."
+                            value={detailSearchInput}
+                            onChange={(e) => setDetailSearchInput(e.target.value)}
+                        />
+                    </div>
+
+                    <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
+                        <div className="col-span-3">Participant</div>
+                        <div className={assignedJudges.length > 0 ? "col-span-6 flex justify-between px-4" : "col-span-6"}>
+                            {assignedJudges.length > 0 ? (
+                                assignedJudges.map((judge: any) => (
+                                    <div key={judge._id} className="text-center flex-1">{judge.name}</div>
+                                ))
+                            ) : (
+                                "Judges' Breakdown"
+                            )}
+                        </div>
+                        <div className="col-span-2 text-center">Total Score</div>
+                        <div className="col-span-1 text-right">Rank</div>
+                    </div>
+
+                    <div className="hidden md:block space-y-2.5">
+                        {marksLoading ? (
+                            <div className="py-16 text-center text-purple-400 bg-[#13111C]/30 rounded-xl border border-white/[0.06] animate-pulse flex flex-col items-center justify-center gap-3">
+                                <RefreshCw size={32} className="animate-spin" />
+                                <span className="font-medium">Loading marks...</span>
+                            </div>
+                        ) : groupedMarks.length > 0 ? (
+                            groupedMarks.map((m, index) => {
+                                const borderAccents = ['border-l-purple-500', 'border-l-amber-500', 'border-l-blue-500', 'border-l-indigo-500'];
+                                const leftBorderClass = borderAccents[index % borderAccents.length];
+                                
+                                return (
+                                <div key={m.participant._id} className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-4 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl hover:bg-[#161830] transition-colors group shadow-sm`} style={{ animationDelay: `${index * 50}ms` }}>
+                                    {/* Participant */}
+                                    <div className="col-span-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-lg bg-[#111018] border border-gray-800 flex items-center justify-center text-sm font-bold text-gray-400 font-mono shadow-inner">
+                                                {m.participant?.chestNumber}
                                             </div>
-                                        )}
-                                        <div className="flex flex-col items-center justify-center gap-3 text-purple-400 animate-pulse">
-                                            <RefreshCw size={32} className="animate-spin" />
-                                            <span className="font-medium">Loading marks...</span>
+                                            <div className="min-w-0">
+                                                <div className="font-bold text-white group-hover:text-purple-300 transition-colors truncate">{m.participant?.name}</div>
+                                                <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mt-0.5 truncate">{m.participant?.teamId?.name || 'No Team'}</div>
+                                            </div>
                                         </div>
-                                    </td>
-                                </tr>
-                            ) : groupedMarks.length > 0 ? (
-                                groupedMarks.map(m => (
-                                    <tr key={m.participant._id} className="hover:bg-[#252236] transition-colors group">
-                                        <td className="p-5">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-lg bg-[#13111C] border border-gray-700 flex items-center justify-center text-sm font-bold text-gray-400 font-mono">
-                                                    {m.participant?.chestNumber}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-white group-hover:text-purple-300 transition-colors">{m.participant?.name}</div>
-                                                    <div className="text-xs text-gray-500">{m.participant?.teamId?.name || 'No Team'}</div>
-                                                </div>
-                                            </div>
-                                        </td>
+                                    </div>
+
+                                    {/* Judges */}
+                                    <div className={assignedJudges.length > 0 ? "col-span-6 flex justify-between px-4" : "col-span-6"}>
                                         {assignedJudges.length > 0 ? (
                                             assignedJudges.map((judge: any) => {
                                                 const judgeMark = m.judgesMarks.find((jm: any) => jm.judgeName === judge.name);
                                                 return (
-                                                    <td key={judge._id} className="p-5 text-center">
+                                                    <div key={judge._id} className="text-center flex-1">
                                                         {judgeMark ? (
-                                                            <div className="flex flex-col items-center gap-2">
+                                                            <div className="flex flex-col items-center gap-1.5">
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-purple-600/10 border border-purple-600/20 text-purple-300 font-bold font-mono text-lg shadow-inner">
+                                                                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-600/20 text-purple-300 font-bold font-mono text-base shadow-inner">
                                                                         {judgeMark.mark}
                                                                     </div>
-                                                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${
+                                                                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                                                                         judgeMark.status === 'approved' ? 'bg-green-500/10 text-green-400' :
                                                                         judgeMark.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
                                                                         'bg-yellow-500/10 text-yellow-400'
@@ -596,8 +674,8 @@ export default function MarksReviewPage() {
                                                                 </div>
                                                                 {judgeMark.status === 'pending' && (
                                                                     <div className="flex gap-1 mt-1">
-                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'approve')} className="text-[10px] bg-green-500/20 hover:bg-green-500/40 text-green-300 px-2 py-1 rounded transition-colors">Approve</button>
-                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'reject')} className="text-[10px] bg-red-500/20 hover:bg-red-500/40 text-red-300 px-2 py-1 rounded transition-colors">Reject</button>
+                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'approve')} className="text-[9px] font-bold uppercase bg-green-500/20 hover:bg-green-500/40 text-green-300 px-2 py-1 rounded transition-colors">Approve</button>
+                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'reject')} className="text-[9px] font-bold uppercase bg-red-500/20 hover:bg-red-500/40 text-red-300 px-2 py-1 rounded transition-colors">Reject</button>
                                                                     </div>
                                                                 )}
                                                                 {judgeMark.status === 'approved' && (
@@ -607,73 +685,159 @@ export default function MarksReviewPage() {
                                                                             const reason = prompt("Enter reason for editing this approved mark:");
                                                                             if (reason) handleMarkAction(judgeMark.id, 'edit', Number(newVal), reason);
                                                                         }
-                                                                    }} className="text-[10px] bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-3 py-1 rounded mt-1 transition-colors">Edit</button>
+                                                                    }} className="text-[9px] font-bold uppercase tracking-wider bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-3 py-1 rounded mt-0.5 transition-colors">Edit</button>
                                                                 )}
                                                             </div>
                                                         ) : (
                                                             <span className="text-gray-700 font-bold font-mono">--</span>
                                                         )}
-                                                    </td>
+                                                    </div>
                                                 );
                                             })
                                         ) : (
-                                            <td className="p-5">
-                                                <div className="flex flex-wrap gap-2">
-                                                    {m.judgesMarks.map((jm: any, idx: number) => (
-                                                        <div key={idx} className="flex items-center gap-1.5 bg-[#13111C] border border-gray-700 rounded-lg px-2.5 py-1.5">
-                                                            <div className="w-5 h-5 rounded-full bg-gray-800 flex items-center justify-center text-[9px] text-gray-400 font-bold">
-                                                                {jm.judgeInitial}
-                                                            </div>
-                                                            <span className="text-xs text-gray-300 font-medium">{jm.judgeName}:</span>
-                                                            <span className="text-sm font-bold text-yellow-500 font-mono">{jm.mark}</span>
+                                            <div className="flex flex-wrap gap-2">
+                                                {m.judgesMarks.map((jm: any, idx: number) => (
+                                                    <div key={idx} className="flex items-center gap-1.5 bg-[#111018] border border-gray-800 rounded-lg px-2.5 py-1.5 shadow-inner">
+                                                        <div className="w-5 h-5 rounded-md bg-gray-800 flex items-center justify-center text-[9px] text-gray-400 font-bold">
+                                                            {jm.judgeInitial}
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            </td>
+                                                        <span className="text-xs text-gray-400 font-medium">{jm.judgeName}:</span>
+                                                        <span className="text-sm font-bold text-yellow-500 font-mono">{jm.mark}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         )}
-                                        <td className="p-5 text-center">
-                                            <span className="inline-block px-4 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 font-mono text-xl font-black">
-                                                {m.totalScore}
+                                    </div>
+
+                                    {/* Total Score */}
+                                    <div className="col-span-2 text-center">
+                                        <span className="inline-block px-4 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 font-mono text-xl font-black shadow-inner">
+                                            {m.totalScore}
+                                        </span>
+                                    </div>
+
+                                    {/* Rank */}
+                                    <div className="col-span-1 text-right">
+                                        {m.rank === 1 && (
+                                            <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-yellow-500/20 text-yellow-400 font-bold border border-yellow-500/30 text-xs gap-1.5">
+                                                <Trophy size={12} /> 1st
                                             </span>
-                                        </td>
-                                        <td className="p-5 text-right">
-                                            {m.rank === 1 && (
-                                                <span className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-500/20 text-yellow-400 font-bold border border-yellow-500/30 text-sm gap-2">
-                                                    <Trophy size={14} /> 1st Place
-                                                </span>
-                                            )}
-                                            {m.rank === 2 && (
-                                                <span className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-gray-300/20 text-gray-300 font-bold border border-gray-400/30 text-sm gap-2">
-                                                    <Trophy size={14} /> 2nd Place
-                                                </span>
-                                            )}
-                                            {m.rank === 3 && (
-                                                <span className="inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-orange-500/20 text-orange-400 font-bold border border-orange-500/30 text-sm gap-2">
-                                                    <Trophy size={14} /> 3rd Place
-                                                </span>
-                                            )}
-                                            {m.rank > 3 && (
-                                                <span className="text-gray-500 font-bold font-mono">
-                                                    #{m.rank}
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={assignedJudges.length > 0 ? (3 + assignedJudges.length) : 4} className="p-16 text-center text-gray-500">
-                                        <div className="flex flex-col items-center justify-center gap-3">
-                                            <Clock size={32} className="opacity-20" />
-                                            <p>No marks submitted for this program yet.</p>
+                                        )}
+                                        {m.rank === 2 && (
+                                            <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-gray-300/20 text-gray-300 font-bold border border-gray-400/30 text-xs gap-1.5">
+                                                <Trophy size={12} /> 2nd
+                                            </span>
+                                        )}
+                                        {m.rank === 3 && (
+                                            <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-orange-500/20 text-orange-400 font-bold border border-orange-500/30 text-xs gap-1.5">
+                                                <Trophy size={12} /> 3rd
+                                            </span>
+                                        )}
+                                        {m.rank > 3 && (
+                                            <span className="text-gray-500 font-bold font-mono text-lg pr-2">
+                                                #{m.rank}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                );
+                            })
+                        ) : (
+                            <div className="py-20 text-center text-gray-500 bg-[#13111C]/30 rounded-xl border border-white/[0.06]">
+                                <div className="flex flex-col items-center justify-center gap-3">
+                                    <Clock size={32} className="opacity-20" />
+                                    <p>No marks submitted for this program yet.</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Server-side pagination controls */}
+                    {marksData && marksData.totalPages > 1 && (
+                        <div className="flex items-center justify-center gap-4 py-4">
+                            <button
+                                onClick={() => setMarksPage(p => Math.max(1, p - 1))}
+                                disabled={marksPage <= 1}
+                                className="px-5 py-2 text-sm font-bold bg-[#1E1B2E] border border-gray-700 hover:border-purple-500/50 hover:bg-[#252234] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-all active:scale-95"
+                            >
+                                ← Previous
+                            </button>
+                            <span className="text-sm text-gray-400 font-medium min-w-[120px] text-center">
+                                Page <span className="text-white font-bold">{marksPage}</span> of <span className="text-white font-bold">{marksData.totalPages}</span>
+                            </span>
+                            <button
+                                onClick={() => setMarksPage(p => Math.min(marksData.totalPages, p + 1))}
+                                disabled={marksPage >= marksData.totalPages}
+                                className="px-5 py-2 text-sm font-bold bg-[#1E1B2E] border border-gray-700 hover:border-purple-500/50 hover:bg-[#252234] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-all active:scale-95"
+                            >
+                                Next →
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Mobile list view */}
+                    <div className="md:hidden space-y-3">
+                        {marksLoading ? (
+                            <div className="py-16 text-center text-purple-400 bg-[#13111C]/30 rounded-xl border border-white/[0.06] animate-pulse flex flex-col items-center justify-center gap-3">
+                                <RefreshCw size={32} className="animate-spin" />
+                                <span className="font-medium">Loading...</span>
+                            </div>
+                        ) : groupedMarks.length > 0 ? (
+                            groupedMarks.map((m) => (
+                                <div key={m.participant._id} className="px-4 py-4 bg-[#131629] border border-white/[0.07] rounded-xl flex flex-col gap-4 shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-lg bg-[#111018] border border-gray-800 flex items-center justify-center text-sm font-bold text-gray-400 font-mono shadow-inner">
+                                                {m.participant?.chestNumber}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-white text-sm">{m.participant?.name}</div>
+                                                <div className="text-[10px] text-gray-500 uppercase font-bold mt-0.5">{m.participant?.teamId?.name || 'No Team'}</div>
+                                            </div>
                                         </div>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                        <div className="text-right">
+                                            <div className="text-yellow-400 font-mono text-xl font-black">{m.totalScore}</div>
+                                            <div className="text-[10px] text-gray-500 uppercase font-bold">Total</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="pt-3 border-t border-white/[0.06] flex flex-col gap-2">
+                                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Judges</span>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {m.judgesMarks.map((jm: any, idx: number) => (
+                                                <div key={idx} className="bg-[#111018] border border-gray-800 rounded-lg p-2 shadow-inner">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-[10px] text-gray-400 font-bold truncate">{jm.judgeName}</span>
+                                                        <span className={`text-[8px] font-bold uppercase px-1 py-0.5 rounded ${
+                                                            jm.status === 'approved' ? 'bg-green-500/10 text-green-400' :
+                                                            jm.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
+                                                            'bg-yellow-500/10 text-yellow-400'
+                                                        }`}>
+                                                            {jm.status}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between mt-2">
+                                                        <span className="text-sm font-bold text-white font-mono">{jm.mark}</span>
+                                                        {jm.status === 'pending' && (
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => handleMarkAction(jm.id, 'approve')} className="w-5 h-5 flex items-center justify-center rounded bg-green-500/20 text-green-300 font-bold text-[10px]">✓</button>
+                                                                <button onClick={() => handleMarkAction(jm.id, 'reject')} className="w-5 h-5 flex items-center justify-center rounded bg-red-500/20 text-red-300 font-bold text-[10px]">✕</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="py-12 text-center text-gray-500 bg-[#13111C]/30 rounded-xl border border-white/[0.06]">
+                                <p className="text-sm">No marks found.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
         )}
     </div>
 
@@ -801,6 +965,15 @@ export default function MarksReviewPage() {
         )}
 
         {/* Live judge activity toasts — fixed bottom-right, above all content */}
+        <ConfirmModal
+          isOpen={showCalculateConfirm}
+          title="Recalculate Scores"
+          message="This will recalculate scores for all teams based on these marks. Continue?"
+          confirmText="Calculate"
+          variant="warning"
+          onConfirm={confirmCalculateScores}
+          onCancel={() => setShowCalculateConfirm(false)}
+        />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );

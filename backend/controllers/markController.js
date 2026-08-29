@@ -11,6 +11,9 @@ const ProgramResult = require("../models/ProgramResult");
 const ConversationPair = require("../models/ConversationPair");
 const { updateGoogleSheet } = require("../utils/googleSheets");
 const sendError = require("../utils/errorResponse");
+const sseManager = require("../utils/sseManager");
+const Judge = require("../models/Judge");
+
 
 // @desc    Submit or Updates marks (Judge)
 // @route   POST /api/marks
@@ -119,6 +122,7 @@ const submitMark = async (req, res) => {
     };
 
     // Broadcast to all admin SSE clients watching this program.
+    sseManager.broadcast(programId, broadcastPayload);
 
     // ── Conversation group: auto-mirror mark to ALL group members ──────────────
     // If this participant is the primary of a conversation group, upsert the
@@ -149,6 +153,171 @@ const submitMark = async (req, res) => {
     sendError(res, 400, "Error submitting mark", error);
   }
 };
+
+// @desc    Submit batch marks for multiple participants in a program (Judge)
+// @route   POST /api/marks/batch
+// @access  Judge / Admin
+const submitBatchMarks = async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { programId, marks } = req.body;
+
+    // Security: Forced to use authenticated user ID
+    const judgeId = req.user.id;
+
+    if (!programId) {
+      return res.status(400).json({ message: "programId is required." });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(programId)) {
+      return res.status(400).json({ message: "Invalid programId format." });
+    }
+
+    if (!marks || !Array.isArray(marks) || marks.length === 0) {
+      return res.status(400).json({ message: "marks array must be provided and cannot be empty." });
+    }
+
+    const program = await Program.findById(programId).select("name language maxMarks isConversation");
+    if (!program) {
+      return res.status(404).json({ message: "Program not found." });
+    }
+
+    // Authorization check: Verify judge is assigned to program (unless admin)
+    if (req.user.role === "judge") {
+      const assignedGroup = await JudgeGroup.findOne({
+        judges: judgeId,
+        assignedPrograms: programId,
+      });
+
+      if (!assignedGroup) {
+        return res.status(403).json({
+          message: "Unauthorized: You are not assigned to judge this program.",
+        });
+      }
+    }
+
+    // Deduplicate candidate marks in payload (keep latest if duplicate in array)
+    const marksByParticipant = new Map();
+    for (const item of marks) {
+      if (!item.participantId || !mongoose.Types.ObjectId.isValid(item.participantId)) {
+        return res.status(400).json({ message: "Invalid participantId format in batch payload." });
+      }
+
+      if (item.marksGiven === undefined || item.marksGiven === null) {
+        return res.status(400).json({ message: `Marks missing for participant ${item.participantId}` });
+      }
+
+      const numMark = Number(item.marksGiven);
+      if (isNaN(numMark) || numMark < 0 || numMark > program.maxMarks) {
+        return res.status(400).json({
+          message: `Marks must be a number between 0 and ${program.maxMarks}`,
+        });
+      }
+
+      marksByParticipant.set(item.participantId.toString(), numMark);
+    }
+
+    const participantIds = Array.from(marksByParticipant.keys());
+
+    // Verify all participants exist and belong to this program
+    const participants = await Participant.find({
+      _id: { $in: participantIds },
+      programs: programId,
+    }).select("_id name chestNumber teamId");
+
+    if (participants.length !== participantIds.length) {
+      return res.status(400).json({
+        message: "One or more participants are invalid or not registered for this program.",
+      });
+    }
+
+    let savedCount = 0;
+
+    await session.withTransaction(async () => {
+      const bulkOps = [];
+      
+      for (const [pId, markVal] of marksByParticipant.entries()) {
+        bulkOps.push({
+          updateOne: {
+            filter: { judgeId, programId, participantId: pId },
+            update: {
+              $set: {
+                marksGiven: markVal,
+                submitted: true,
+                status: "pending",
+              },
+            },
+            upsert: true,
+          },
+        });
+      }
+
+      if (bulkOps.length > 0) {
+        const bulkRes = await JudgeMark.bulkWrite(bulkOps, { session });
+        savedCount = (bulkRes.upsertedCount || 0) + (bulkRes.modifiedCount || 0) + (bulkRes.matchedCount || 0);
+      }
+
+      // Handle Group Program auto-mirroring if isConversation === true
+      if (program.isConversation) {
+        for (const pId of participantIds) {
+          const markVal = marksByParticipant.get(pId);
+          const group = await ConversationPair.findOne({
+            programId,
+            primaryParticipantId: pId,
+          }).session(session);
+
+          if (group && group.participants && group.participants.length > 1) {
+            const otherMemberIds = group.participants.filter(
+              id => id.toString() !== pId
+            );
+
+            const mirrorOps = otherMemberIds.map(memberId => ({
+              updateOne: {
+                filter: { judgeId, programId, participantId: memberId },
+                update: {
+                  $set: { marksGiven: markVal, submitted: true, status: "pending" },
+                },
+                upsert: true,
+              },
+            }));
+
+            if (mirrorOps.length > 0) {
+              await JudgeMark.bulkWrite(mirrorOps, { session });
+            }
+          }
+        }
+      }
+    });
+
+    const judge = await Judge.findById(judgeId).select("name");
+    const broadcastPayload = {
+      programId,
+      judgeId,
+      judgeName: judge?.name || "A Judge",
+      programName: program.name,
+      savedCount,
+      _notification: {
+        judgeName: judge?.name || "A Judge",
+        programName: program.name,
+        language: program.language || "",
+      },
+    };
+
+    // Broadcast SSE update
+    sseManager.broadcast(programId, broadcastPayload);
+
+    res.json({
+      success: true,
+      savedCount,
+      message: `Successfully submitted marks for ${savedCount} participant(s).`,
+    });
+  } catch (error) {
+    sendError(res, 400, "Error submitting batch marks", error);
+  } finally {
+    await session.endSession();
+  }
+};
+
 
 // @desc    Get marks for a program (Admin/Judge)
 // @route   GET /api/marks/:programId
@@ -622,13 +791,29 @@ const getAllExportData = async (req, res) => {
           select: "name",
         },
       })
-      .select("position positionPoints participantId programId")
+      .populate({
+        path: "programId",
+        select: "name isConversation"
+      })
+      .select("position positionPoints participantId programId isConversation")
       .sort({ position: 1 })
       .lean();
 
+    const enrichedResults = allResults.map(r => {
+      const pId = r.programId?._id || r.programId;
+      const pName = r.programId?.name || "Unknown Program";
+      const isGroup = r.isConversation || r.programId?.isConversation || false;
+      return {
+        ...r,
+        programId: pId,
+        programName: pName,
+        isGroupProgram: isGroup
+      };
+    });
+
     res.json({
       allMarks,
-      allResults
+      allResults: enrichedResults
     });
   } catch (error) {
     sendError(res, 500, "Failed to retrieve export data", error);
@@ -723,8 +908,150 @@ const editApprovedMark = async (req, res) => {
   }
 };
 
+// @desc    Get lightweight program list with participant/judge counts (Review Marks initial load)
+// @route   GET /api/marks/review/programs
+// @access  Admin
+const getReviewPrograms = async (req, res) => {
+  try {
+    // 1. All programs with group info
+    const programs = await Program.find().populate('groupId', 'name').lean();
+
+    // 2. Participant counts per program — single aggregation, no N+1
+    const participantCounts = await Participant.aggregate([
+      { $unwind: '$programs' },
+      { $group: { _id: '$programs', participantCount: { $sum: 1 } } },
+    ]);
+    const participantCountMap = Object.fromEntries(
+      participantCounts.map(p => [p._id.toString(), p.participantCount])
+    );
+
+    // 3. Judge submission stats per program — single aggregation, no N+1
+    const markStats = await JudgeMark.aggregate([
+      { $group: { _id: '$programId', judges: { $addToSet: '$judgeId' } } },
+      { $project: { _id: 1, submittedCount: { $size: '$judges' } } },
+    ]);
+    const markStatsMap = Object.fromEntries(
+      markStats.map(s => [s._id.toString(), s.submittedCount])
+    );
+
+    // 4. Judge group assignments per program — single query, no N+1
+    const allJudgeGroups = await JudgeGroup.find({}, 'assignedPrograms judges').lean();
+    const programAssignmentMap = {};
+    allJudgeGroups.forEach(group => {
+      if (group.assignedPrograms && group.judges) {
+        group.assignedPrograms.forEach(pId => {
+          const pidStr = pId.toString();
+          if (!programAssignmentMap[pidStr]) programAssignmentMap[pidStr] = new Set();
+          group.judges.forEach(jId => programAssignmentMap[pidStr].add(jId.toString()));
+        });
+      }
+    });
+
+    // 5. Merge into lightweight program objects — no per-program queries
+    const result = programs.map(p => {
+      const pidStr = p._id.toString();
+      return {
+        _id: p._id,
+        name: p.name,
+        language: p.language,
+        status: p.status,
+        groupId: p.groupId,
+        isConversation: p.isConversation,
+        maxMarks: p.maxMarks,
+        participantCount: participantCountMap[pidStr] || 0,
+        submittedCount: markStatsMap[pidStr] || 0,
+        totalAssigned: programAssignmentMap[pidStr] ? programAssignmentMap[pidStr].size : 0,
+        hasMarks: !!markStatsMap[pidStr],
+      };
+    });
+
+    // Sort by group name then program name (consistent with GET /api/programs)
+    result.sort((a, b) => {
+      const catA = a.groupId?.name || '';
+      const catB = b.groupId?.name || '';
+      if (catA !== catB) return catA.localeCompare(catB);
+      return a.name.localeCompare(b.name);
+    });
+
+    res.json(result);
+  } catch (error) {
+    sendError(res, 500, 'Failed to retrieve review programs', error);
+  }
+};
+
+// @desc    Get paginated, searchable marks for one program (Review Marks detail view)
+// @route   GET /api/marks/review/program/:programId
+// @access  Admin
+const getReviewProgramDetail = async (req, res) => {
+  try {
+    const { programId } = req.params;
+
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+    const search = (req.query.search || '').trim();
+    const skip = (page - 1) * limit;
+
+    // Build query: participants registered for this program + optional text search
+    const participantQuery = { programs: new mongoose.Types.ObjectId(programId) };
+    if (search) {
+      participantQuery.$or = [
+        { name:        { $regex: search, $options: 'i' } },
+        { chestNumber: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // 1. Total matching participant count (pagination metadata)
+    const total = await Participant.countDocuments(participantQuery);
+    const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
+
+    // 2. Paginated participant IDs (lightweight fetch for this page only)
+    const pageParticipants = await Participant.find(participantQuery)
+      .select('_id')
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const participantIds = pageParticipants.map(p => p._id);
+
+    // 3. All JudgeMarks for this page of participants in this program only
+    const marks = participantIds.length > 0
+      ? await JudgeMark.find({ programId, participantId: { $in: participantIds } })
+          .populate({
+            path: 'participantId',
+            select: 'name chestNumber teamId',
+            populate: { path: 'teamId', select: 'name' },
+          })
+          .populate('judgeId', 'name')
+          .lean()
+      : [];
+
+    // 4. Assigned judges for this program
+    const judgeGroups = await JudgeGroup.find({ assignedPrograms: programId }).populate('judges', 'name');
+    const assignedJudgesMap = {};
+    judgeGroups.forEach(group => {
+      if (group.judges && group.judges.length > 0) {
+        group.judges.forEach(j => {
+          assignedJudgesMap[j._id.toString()] = { _id: j._id, name: j.name || 'Unknown Judge' };
+        });
+      }
+    });
+
+    res.json({
+      marks,
+      assignedJudges: Object.values(assignedJudgesMap),
+      total,
+      page,
+      limit,
+      totalPages,
+    });
+  } catch (error) {
+    sendError(res, 500, 'Failed to retrieve review program detail', error);
+  }
+};
+
 module.exports = {
   submitMark,
+  submitBatchMarks,
   getMarksByProgram,
   calculateScores,
   exportToGoogleSheets,
@@ -733,5 +1060,8 @@ module.exports = {
   getAllExportData,
   updateMarkStatus,
   editApprovedMark,
+  getReviewPrograms,
+  getReviewProgramDetail,
 };
+
 
