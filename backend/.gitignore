@@ -6,7 +6,6 @@ service-account.json
 
 # Dependencies
 node_modules/
-package-lock.json*
 yarn.lock*
 
 # Logs
@@ -36,6 +35,7 @@ build/
 .idea/
 .vscode/
 
-#testfile 
-backend/load-tests/
-backend/scripts/seed_loadtest.jsS
+# Scratch & Temporary Test Files
+scratch/
+scratch_*.js
+test_*.js

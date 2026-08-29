@@ -17,6 +17,8 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { usePrograms, useTeams, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
+import ToastContainer from '@/components/ToastContainer';
+import { useToast } from '@/lib/useToast';
 
 ChartJS.register(
   CategoryScale,
@@ -36,6 +38,7 @@ export default function AdminDashboard() {
   const { data: groups = [] } = useGroups();
   const { data: participants = [] } = useParticipants();
   const { invalidatePrograms } = useInvalidate();
+  const { toasts, addToast, dismissToast } = useToast();
   const refreshPrograms = invalidatePrograms;
   const participantCount = participants?.length ?? 0;
   
@@ -48,8 +51,9 @@ export default function AdminDashboard() {
     try {
       await apiRequest(`/programs/${id}`, 'PATCH', { status: newStatus });
       refreshPrograms();
+      addToast({ title: 'Status Updated', message: `Program status changed to ${newStatus}`, type: 'success' });
     } catch (e: any) {
-        alert('Failed to update status');
+        addToast({ title: 'Update Failed', message: e.message || 'Failed to update status', type: 'error' });
     }
   };
 
@@ -438,6 +442,7 @@ export default function AdminDashboard() {
         )}
       </div>
 
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

@@ -3,7 +3,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, User, Users, Flag, Save, Layers, Grid, FileText, Globe, Image, Upload, Search, ChevronDown, List, MoreVertical, Calendar } from 'lucide-react';
-import { useGroups, useTeams, usePrograms, useParticipants, useInvalidate } from '@/lib/queries';
+import { useGroups, useTeams, usePrograms, useParticipants, usePaginatedParticipants, useInvalidate } from '@/lib/queries';
+import ToastContainer from '@/components/ToastContainer';
+import ConfirmModal from '@/components/ConfirmModal';
+import { useToast } from '@/lib/useToast';
 
 // Memoized Row Component to prevent full table re-renders on hover
 const ParticipantRow = React.memo(({ p, index, displayIndex, hoveredParticipant, setHoveredParticipant, setViewParticipant, setSelectedParticipantForProgram, setShowAddProgramModal, handleDelete }: any) => {
@@ -144,8 +147,17 @@ export default function ParticipantsPage() {
   const { data: groups = [] as any[] } = useGroups();
   const { data: teams = [] as any[] } = useTeams();
   const { data: programs = [] as any[] } = usePrograms();
-  const { data: participants = [] as any[] } = useParticipants();
-  const { invalidateParticipants } = useInvalidate();
+  const { invalidateParticipants, invalidateTeams, invalidateGroups, invalidateTeamParticipants, invalidateGroupParticipants } = useInvalidate();
+  const { toasts, addToast, dismissToast } = useToast();
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+  
+  const { data: paginatedData } = usePaginatedParticipants(currentPage, itemsPerPage);
+  const participants = paginatedData?.data || [];
+  const backendTotal = paginatedData?.total || 0;
+  const backendTotalPages = paginatedData?.pages || 1;
   const [form, setForm] = useState<{
     name: string;
     chestNumber: string;
@@ -288,7 +300,7 @@ export default function ParticipantsPage() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 500 * 1024) { // 500KB limit
-        alert("Image size must be less than 500KB");
+        addToast({ title: 'Validation Error', message: "Image size must be less than 500KB", type: 'warning' });
         return;
       }
       const reader = new FileReader();
@@ -316,25 +328,40 @@ export default function ParticipantsPage() {
         image: form.image
       });
       invalidateParticipants();
+      if (form.teamId) {
+        invalidateTeams();
+        invalidateTeamParticipants(form.teamId);
+      }
+      if (form.groupId) {
+        invalidateGroups();
+        invalidateGroupParticipants(form.groupId);
+      }
       // Keep teamId and groupId for faster entry, reset others
       setForm(prev => ({ ...prev, name: '', chestNumber: '', selectedPrograms: [], programId: '', language: '', image: '' }));
-      alert('Participant added!');
+      addToast({ title: 'Success', message: 'Participant added!', type: 'success' });
     } catch (e: any) {
-      alert(e.message);
+      addToast({ title: 'Error', message: e.message || 'Failed to add participant', type: 'error' });
     }
   };
 
-  const handleDelete = React.useCallback(async (id: string) => {
-    if (!confirm('Are you sure you want to delete this participant?')) return;
-    try {
-      await apiRequest(`/participants/${id}`, 'DELETE');
-      invalidateParticipants();
-    } catch (e: any) { alert(e.message); }
-  }, [invalidateParticipants]);
+  const handleDelete = React.useCallback((id: string) => {
+    setDeleteConfirmId(id);
+  }, []);
 
-  // Pagination & Filtering
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 60;
+  const confirmDeleteParticipant = async () => {
+    if (!deleteConfirmId) return;
+    try {
+      await apiRequest(`/participants/${deleteConfirmId}`, 'DELETE');
+      invalidateParticipants();
+      invalidateTeams();
+      invalidateGroups();
+      addToast({ title: 'Participant Deleted', message: 'Participant deleted successfully.', type: 'info' });
+    } catch (e: any) { 
+      addToast({ title: 'Delete Failed', message: e.message || 'Failed to delete participant', type: 'error' }); 
+    } finally {
+      setDeleteConfirmId(null);
+    }
+  };
 
   // Reset to page 1 when search or filters change
   useEffect(() => {
@@ -343,7 +370,7 @@ export default function ParticipantsPage() {
 
   // Memoized filtered participants
   const filteredParticipants = useMemo(() => {
-    return participants.filter(p => {
+    return participants.filter((p: any) => {
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.chestNumber.toLowerCase().includes(search.toLowerCase());
       const matchGroup = filterGroupId === '' || p.groupId?._id === filterGroupId || p.groupId === filterGroupId;
       const matchTeam = filterTeamId === '' || p.teamId?._id === filterTeamId || p.teamId === filterTeamId;
@@ -351,12 +378,9 @@ export default function ParticipantsPage() {
     });
   }, [participants, search, filterGroupId, filterTeamId]);
 
-  // Slice for current page
-  const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
-  const paginatedParticipants = filteredParticipants.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Slice for current page removed since backend handles pagination
+  const paginatedParticipants = filteredParticipants;
+
 
   return (
     <div className="space-y-6 pb-20">
@@ -570,7 +594,7 @@ export default function ParticipantsPage() {
 
       {/* List Section Header */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pt-4">
-         <h2 className="text-xl font-bold text-white whitespace-nowrap">All Participants <span className="text-gray-600 text-sm font-normal">({filteredParticipants.length})</span></h2>
+         <h2 className="text-xl font-bold text-white whitespace-nowrap">All Participants <span className="text-gray-600 text-sm font-normal">({backendTotal})</span></h2>
          <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto">
              <CustomSelect 
                  value={filterGroupId}
@@ -629,9 +653,9 @@ export default function ParticipantsPage() {
 
         {/* Desktop - Exact card-row style from reference photo */}
         <div className="hidden md:block space-y-2.5">
-          {paginatedParticipants.map((p, index) => {
+          {paginatedParticipants.map((p: any, index: number) => {
             const absoluteIndex = (currentPage - 1) * itemsPerPage + index;
-            const displayIndex = filteredParticipants.length - absoluteIndex; 
+            const displayIndex = absoluteIndex + 1;
             const formattedIndex = String(displayIndex).padStart(2, '0');
 
             // Left border accent colors matching the screenshot
@@ -650,7 +674,8 @@ export default function ParticipantsPage() {
             return (
               <div
                 key={p._id}
-                className={`grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
+                className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
+                style={{ animationDelay: `${index * 50}ms` }}
                 onMouseEnter={() => setHoveredParticipant(p._id)}
                 onMouseLeave={() => setHoveredParticipant(null)}
                 onClick={() => setViewParticipant(p)}
@@ -735,7 +760,7 @@ export default function ParticipantsPage() {
 
         {/* Mobile Card Grid View */}
         <div className="md:hidden flex flex-col gap-3 p-1 bg-[#0F0D15]">
-            {paginatedParticipants.map((p) => (
+            {paginatedParticipants.map((p: any) => (
                 <div key={p._id} className="bg-[#1E1B2E] rounded-xl p-3 border border-[#2D283E] flex items-center justify-between shadow-lg relative overflow-hidden">
                     {/* Content */}
                     <div className="flex flex-col gap-1 z-10 relative max-w-[60%]">
@@ -774,37 +799,28 @@ export default function ParticipantsPage() {
         </div>
         
         {/* Pagination Controls */}
-        {totalPages > 1 && (
-            <div className="px-5 py-4 border-t border-white/[0.04] flex justify-between items-center">
+        {backendTotalPages > 1 && (
+            <div className="px-5 py-4 border-t border-white/[0.04] flex flex-col sm:flex-row justify-between items-center gap-4">
                 <span className="text-gray-600 text-sm">
-                  Showing <span className="text-gray-400">{(currentPage-1)*itemsPerPage+1}</span> to <span className="text-gray-400">{Math.min(currentPage*itemsPerPage, filteredParticipants.length)}</span> of {filteredParticipants.length} entries
+                  Showing <span className="text-gray-400">{backendTotal === 0 ? 0 : (currentPage-1)*itemsPerPage+1}</span> to <span className="text-gray-400">{Math.min(currentPage*itemsPerPage, backendTotal)}</span> of {backendTotal} entries
                 </span>
                 <div className="flex items-center gap-2">
                   <button 
                       onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                       disabled={currentPage === 1}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.06] text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.1] transition"
+                      className="px-4 h-9 flex items-center justify-center rounded-lg bg-white/[0.06] text-gray-400 font-medium disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.1] transition"
                   >
-                      ‹
+                      Previous
                   </button>
-                  {Array.from({length: Math.min(totalPages, 5)}, (_, i) => i + 1).map(page => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-medium transition ${
-                        currentPage === page 
-                          ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40' 
-                          : 'bg-white/[0.06] text-gray-400 hover:bg-white/[0.1]'
-                      }`}
-                    >{page}</button>
-                  ))}
-                  {totalPages > 5 && <span className="text-gray-600">...</span>}
+                  <span className="text-sm text-gray-500 font-medium px-2">
+                      Page {currentPage} of {backendTotalPages}
+                  </span>
                   <button 
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      disabled={currentPage === totalPages}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/[0.06] text-gray-400 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.1] transition"
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, backendTotalPages))}
+                      disabled={currentPage === backendTotalPages}
+                      className="px-4 h-9 flex items-center justify-center rounded-lg bg-white/[0.06] text-gray-400 font-medium disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/[0.1] transition"
                   >
-                      ›
+                      Next
                   </button>
                 </div>
             </div>
@@ -892,7 +908,7 @@ export default function ParticipantsPage() {
 
                     <button 
                         onClick={async () => {
-                            if(programForm.selectedPrograms.length === 0 && !programForm.programId) return alert("Select at least one program");
+                            if(programForm.selectedPrograms.length === 0 && !programForm.programId) return addToast({ title: 'Selection Required', message: "Select at least one program", type: 'warning' });
                             
                             // Add currently selected program if not in list
                             const finalProgramsToAdd = [...programForm.selectedPrograms];
@@ -915,12 +931,14 @@ export default function ParticipantsPage() {
                                     groupId: selectedParticipantForProgram.groupId?._id 
                                 });
                                 
-                                alert("Programs added!");
+                                addToast({ title: 'Success', message: "Programs added!", type: 'success' });
                                 setShowAddProgramModal(false);
                                 setProgramForm({ language: '', programId: '', selectedPrograms: [] });
                                 invalidateParticipants();
+                                if (selectedParticipantForProgram.teamId?._id) invalidateTeamParticipants(selectedParticipantForProgram.teamId._id);
+                                if (selectedParticipantForProgram.groupId?._id) invalidateGroupParticipants(selectedParticipantForProgram.groupId._id);
                             } catch(e:any) {
-                                alert(e.message);
+                                addToast({ title: 'Error', message: e.message, type: 'error' });
                             }
                         }}
                         className="w-full bg-green-600 hover:bg-green-500 text-white py-4 rounded-xl font-bold shadow-xl shadow-green-900/20 text-lg mt-4"
@@ -1162,11 +1180,11 @@ export default function ParticipantsPage() {
                                 
                                 <button 
                                     onClick={async () => {
-                                        if(programForm.selectedPrograms.length === 0 && !programForm.programId) return alert("Select at least one program");
+                                        if(programForm.selectedPrograms.length === 0 && !programForm.programId) return addToast({ title: 'Selection Required', message: "Select at least one program", type: 'warning' });
                                         
                                         if (selectedModalProgramOb?.isConversation) {
-                                            if (selectedPartners.length === 0) return alert("Please select at least one partner for this Conversation program.");
-                                            if (!officialChestId) return alert("Please choose the official chest number for the group.");
+                                            if (selectedPartners.length === 0) return addToast({ title: 'Partner Required', message: "Please select at least one partner for this Conversation program.", type: 'warning' });
+                                            if (!officialChestId) return addToast({ title: 'Chest Number Required', message: "Please choose the official chest number for the group.", type: 'warning' });
                                         }
 
                                         try {
@@ -1199,15 +1217,17 @@ export default function ParticipantsPage() {
                                             const updated = await apiRequest(`/participants/${viewParticipant._id}`);
                                             setViewParticipant((curr: any) => ({ ...updated, image: curr.image })); // Keep image URL
                                             
-                                            alert(selectedModalProgramOb?.isConversation ? "Group registered and program added!" : "Programs added!");
+                                            addToast({ title: 'Success', message: selectedModalProgramOb?.isConversation ? "Group registered and program added!" : "Programs added!", type: 'success' });
                                             setIsAddingProgramMode(false);
                                             setProgramForm({ language: '', programId: '', selectedPrograms: [] });
                                             setSelectedPartners([]);
                                             setPartnerSearchQ('');
                                             setOfficialChestId('');
                                             invalidateParticipants();
+                                            if (viewParticipant.teamId?._id || viewParticipant.teamId) invalidateTeamParticipants(viewParticipant.teamId?._id || viewParticipant.teamId);
+                                            if (viewParticipant.groupId?._id || viewParticipant.groupId) invalidateGroupParticipants(viewParticipant.groupId?._id || viewParticipant.groupId);
                                         } catch(e:any) {
-                                            alert(e.message);
+                                            addToast({ title: 'Error', message: e.message, type: 'error' });
                                         }
                                     }}
                                     disabled={selectedModalProgramOb?.isConversation && (selectedPartners.length === 0 || !officialChestId)}
@@ -1277,6 +1297,15 @@ export default function ParticipantsPage() {
             </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Participant"
+        message="Are you sure you want to delete this participant? This action cannot be undone."
+        confirmText="Delete"
+        onConfirm={confirmDeleteParticipant}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

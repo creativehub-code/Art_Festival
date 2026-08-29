@@ -199,18 +199,6 @@ const createParticipant = async (req, res) => {
       });
       
       participant = await newParticipant.save({ session });
-
-      if (teamId) {
-        await Team.findByIdAndUpdate(teamId, {
-          $push: { participantIds: participant._id },
-        }, { session });
-      }
-
-      if (groupId) {
-        await Group.findByIdAndUpdate(groupId, {
-          $push: { participantIds: participant._id },
-        }, { session });
-      }
     });
 
     res.status(201).json(participant);
@@ -263,32 +251,6 @@ const updateParticipant = async (req, res) => {
       if (!updatedParticipant) {
         throw new Error("PARTICIPANT_NOT_FOUND");
       }
-
-      if (teamChanged) {
-        if (oldTeamId) {
-          await Team.findByIdAndUpdate(oldTeamId, {
-            $pull: { participantIds: participant._id },
-          }, { session });
-        }
-        if (newTeamId) {
-          await Team.findByIdAndUpdate(newTeamId, {
-            $addToSet: { participantIds: participant._id },
-          }, { session });
-        }
-      }
-
-      if (groupChanged) {
-        if (oldGroupId) {
-          await Group.findByIdAndUpdate(oldGroupId, {
-            $pull: { participantIds: participant._id },
-          }, { session });
-        }
-        if (newGroupId) {
-          await Group.findByIdAndUpdate(newGroupId, {
-            $addToSet: { participantIds: participant._id },
-          }, { session });
-        }
-      }
     });
 
     res.json(updatedParticipant);
@@ -315,18 +277,6 @@ const deleteParticipant = async (req, res) => {
 
       if (!participant) {
         throw new Error("PARTICIPANT_NOT_FOUND");
-      }
-
-      if (participant.teamId) {
-        await Team.findByIdAndUpdate(participant.teamId, {
-          $pull: { participantIds: participant._id },
-        }, { session });
-      }
-
-      if (participant.groupId) {
-        await Group.findByIdAndUpdate(participant.groupId, {
-          $pull: { participantIds: participant._id },
-        }, { session });
       }
     });
 

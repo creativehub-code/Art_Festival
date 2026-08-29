@@ -57,3 +57,20 @@ body {
   from { width: 100%; }
   to   { width: 0%; }
 }
+
+/* List card staggered entrance animation */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.card-animate {
+  opacity: 0;
+  animation: card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

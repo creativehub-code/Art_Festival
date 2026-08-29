@@ -3,17 +3,26 @@
 import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { X, Trash2, Shield, Users, Trophy, Plus, ChevronRight } from 'lucide-react';
-import { useTeams, useParticipants, useInvalidate } from '@/lib/queries';
+import { useTeams, useTeamParticipants, useInvalidate } from '@/lib/queries';
+import ToastContainer from '@/components/ToastContainer';
+import ConfirmModal from '@/components/ConfirmModal';
+import { useToast } from '@/lib/useToast';
 
 export default function TeamsPage() {
   const { data: teams = [] as any[] } = useTeams();
-  const { data: participants = [] as any[] } = useParticipants();
   const { invalidateTeams } = useInvalidate();
+  const { toasts, addToast, dismissToast } = useToast();
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
   const [name, setName] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<any>(null);
-  const [filterGroup, setFilterGroup] = useState('All');
   const [displayLimit, setDisplayLimit] = useState(20);
   const [viewParticipant, setViewParticipant] = useState<any>(null);
+
+  const { data: teamParticipantsData } = useTeamParticipants(selectedTeam?._id, 1, displayLimit);
+  const teamParticipants = teamParticipantsData?.participants || [];
+  const totalTeamParticipants = teamParticipantsData?.total || 0;
+  const hasMoreParticipants = teamParticipants.length < totalTeamParticipants;
 
   // Sync selectedTeam whenever context teams refresh (e.g. after verify & calculate)
   // This keeps the detail panel's totalScore up to date without the admin re-clicking.
@@ -31,31 +40,32 @@ export default function TeamsPage() {
       await apiRequest('/teams', 'POST', { name });
       invalidateTeams();
       setName('');
-    } catch(e) { alert('Error creating team'); }
+      addToast({ title: 'Success', message: 'Team created successfully!', type: 'success' });
+    } catch(e: any) { 
+      addToast({ title: 'Error', message: e.message || 'Error creating team', type: 'error' }); 
+    }
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); // Prevent opening the details section
-    if (!confirm('Are you sure you want to delete this team?')) return;
-    try {
-      await apiRequest(`/teams/${id}`, 'DELETE');
-      invalidateTeams();
-      if (selectedTeam?._id === id) setSelectedTeam(null);
-    } catch (e: any) { alert(e.message); }
+    setDeleteConfirmId(id);
   };
 
-  const teamParticipants = participants.filter((p: any) => 
-      (p.teamId?._id || p.teamId) === selectedTeam?._id
-  );
+  const confirmDeleteTeam = async () => {
+    if (!deleteConfirmId) return;
+    try {
+      await apiRequest(`/teams/${deleteConfirmId}`, 'DELETE');
+      invalidateTeams();
+      if (selectedTeam?._id === deleteConfirmId) setSelectedTeam(null);
+      addToast({ title: 'Team Deleted', message: 'Team deleted successfully.', type: 'info' });
+    } catch (e: any) { 
+      addToast({ title: 'Delete Failed', message: e.message || 'Failed to delete team', type: 'error' }); 
+    } finally {
+      setDeleteConfirmId(null);
+    }
+  };
 
-  const filteredParticipants = teamParticipants.filter((p: any) => {
-      if (filterGroup === 'All') return true;
-      const gName = p?.groupId?.name || '';
-      return gName.trim().toLowerCase() === filterGroup.toLowerCase();
-  });
-
-  const displayedParticipants = filteredParticipants.slice(0, displayLimit);
-  const hasMoreParticipants = filteredParticipants.length > displayLimit;
+  const displayedParticipants = teamParticipants;
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-500">
@@ -84,65 +94,73 @@ export default function TeamsPage() {
         </form>
       </div>
 
-      {/* Modern Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {teams.map((t, index) => (
-          <div 
-            key={t._id} 
-            onClick={() => { 
-              setSelectedTeam(t);
-              setFilterGroup('All');
-              setDisplayLimit(20);
-            }}
-            className={`
-                group relative bg-[#0F1120] rounded-xl p-4 border
-                hover:border-purple-500/40 cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-900/10 hover:-translate-y-1
-                ${selectedTeam?._id === t._id ? 'ring-2 ring-purple-500/60 border-transparent' : 'border-white/[0.07]'}
-            `}
-          >
-            {/* Background Gradient Blob */}
-            <div className="absolute -right-6 -top-6 w-20 h-20 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
+      {/* Circular Cards Horizontal Layout */}
+      <div className="relative w-full overflow-x-auto pb-0 pt-8 custom-scrollbar">
+        <div 
+          className="grid grid-flow-col gap-x-4 md:gap-x-8 px-4 pb-0"
+          style={{ gridAutoColumns: 'minmax(180px, 1fr)' }}
+        >
+        {teams.map((t, index) => {
+          const colors = [
+            'from-red-500 to-pink-500',
+            'from-orange-400 to-red-500',
+            'from-purple-500 to-indigo-500',
+            'from-purple-400 to-pink-500',
+            'from-cyan-400 to-blue-500'
+          ];
+          const colorClass = colors[index % colors.length];
+          const isSelected = selectedTeam?._id === t._id;
+          
+          return (
+            <div key={t._id} className="relative flex flex-col items-center w-full group">
+                
+                {/* Connecting Line to next item */}
+                {index < teams.length - 1 && (
+                  <div className="absolute top-[3rem] left-1/2 w-[calc(100%+1rem)] md:w-[calc(100%+2rem)] h-2 -translate-y-1/2 pointer-events-none z-0">
+                      <svg className="overflow-visible" width="100%" height="100%">
+                        <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#4B5563" strokeWidth="2" strokeDasharray="6 6" />
+                        <circle cx="50%" cy="50%" r="6" fill="#0F1120" stroke="#4B5563" strokeWidth="2" />
+                        <circle cx="50%" cy="50%" r="2.5" fill="#9CA3AF" />
+                      </svg>
+                  </div>
+                )}
 
-            <div className="relative z-10 flex flex-col h-full justify-between gap-3">
-                <div className="flex justify-between items-start">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-900/80 to-indigo-900/80 flex items-center justify-center border border-white/10 font-bold text-lg text-white">
-                        {t.name.charAt(0)}
-                    </div>
-                    <div className="px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.07] text-[10px] text-gray-500 font-mono">
-                        #{index + 1}
-                    </div>
+                {/* Circle */}
+                <div 
+                  onClick={() => { setSelectedTeam(t); setDisplayLimit(20); }}
+                  className={`relative w-24 h-24 rounded-full bg-[#0F1120] border flex items-center justify-center cursor-pointer hover:scale-105 transition-transform shadow-xl z-10
+                    ${isSelected ? 'border-purple-400 shadow-purple-500/40' : 'border-white/[0.07] hover:border-purple-500/50'}
+                  `}
+                >
+                  <div className="absolute -inset-2 rounded-full border border-dashed border-gray-600/40 group-hover:border-purple-500/50 transition-colors duration-500 hover:animate-spin-slow"></div>
+                  <span className={`text-4xl font-black bg-clip-text text-transparent bg-gradient-to-br ${colorClass}`}>
+                      {t.name.charAt(0)}
+                  </span>
+                  <div className={`absolute bottom-0 w-full h-1/2 rounded-b-full bg-gradient-to-br ${colorClass} opacity-10 blur-md`}></div>
                 </div>
 
-                <div>
-                    <h3 className="text-base font-bold text-white mb-0.5 group-hover:text-purple-300 transition-colors truncate">{t.name}</h3>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span className="flex items-center gap-1"><Users size={12} /> {t.participantIds?.length || 0}</span>
-                    </div>
-                </div>
-
-                <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between mt-1">
-                     <span className="flex items-center gap-1.5 text-purple-400 font-bold text-sm">
-                        <Trophy size={14} className="text-purple-500" />
-                        {t.totalScore}
-                     </span>
-                     
-                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button 
-                             onClick={(e) => handleDelete(e, t._id)}
-                             className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
-                         >
-                             <Trash2 size={14} />
-                         </button>
-                         <button className="p-1.5 text-gray-500 hover:text-white bg-white/[0.06] rounded-md">
-                             <ChevronRight size={14} />
-                         </button>
-                     </div>
+                {/* Text Below */}
+                <div className="text-center px-2 mt-6 z-10 w-full">
+                  <h3 className={`text-sm font-bold uppercase tracking-widest bg-clip-text text-transparent bg-gradient-to-r ${colorClass} truncate`}>{t.name}</h3>
+                  <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                    {t.totalScore} Points<br/>
+                    {t.memberCount || 0} Members
+                  </p>
+                  
+                  <div className="flex gap-2 justify-center mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={(e) => handleDelete(e, t._id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors">
+                          <Trash2 size={14} />
+                      </button>
+                      <button onClick={() => { setSelectedTeam(t); setDisplayLimit(20); }} className="p-1.5 text-gray-500 hover:text-white bg-white/[0.06] rounded-md">
+                          <ChevronRight size={14} />
+                      </button>
+                  </div>
                 </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
         {teams.length === 0 && (
-            <div className="col-span-full text-center p-16 bg-[#0F1120]/50 rounded-3xl border border-dashed border-white/[0.07] relative overflow-hidden group">
+            <div className="col-span-full w-full text-center p-16 bg-[#0F1120]/50 rounded-3xl border border-dashed border-white/[0.07] relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-t from-purple-900/10 to-transparent pointer-events-none" />
                 <div className="w-20 h-20 bg-white/[0.03] rounded-full flex items-center justify-center mx-auto mb-6 border border-white/[0.07] group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
                     <Trophy size={32} className="text-purple-500" />
@@ -151,117 +169,115 @@ export default function TeamsPage() {
                 <p className="text-gray-500 max-w-sm mx-auto">Create your first team to track points and organize participants.</p>
             </div>
         )}
+        </div>
       </div>
-
       {/* Expanded Team Details Section */}
       {selectedTeam && (
-        <div className="mt-8 bg-[#0F1120] border border-white/[0.07] rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-2xl shadow-black/60 w-full">
-            {/* Header - matches reference photo */}
-            <div className="px-6 py-5 border-b border-white/[0.06] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div className="flex items-center gap-4">
-                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-lg shadow-purple-900/40 flex-shrink-0">
-                     {selectedTeam.name.charAt(0)}
-                 </div>
-                 <div>
-                    <h2 className="text-2xl font-bold text-white">{selectedTeam.name}</h2>
-                    <div className="flex items-center gap-3 text-sm mt-1">
-                        <span className="flex items-center gap-1.5 text-gray-400">
-                          <Users size={13} />
-                          <span>{teamParticipants.length} Members</span>
-                        </span>
-                        <div className="w-1 h-1 rounded-full bg-gray-700"></div>
-                        <span className="flex items-center gap-1.5 text-purple-400 font-semibold">
-                          <Trophy size={13} />
-                          <span>{selectedTeam.totalScore} Points</span>
-                        </span>
-                    </div>
-                 </div>
-              </div>
-
-              <div className="flex items-center gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                {/* Pill Filter - matches reference photo */}
-                <div className="flex bg-white/[0.04] p-1 rounded-xl border border-white/[0.06] gap-0.5">
-                   {['All', 'Senior', 'Junior', 'SubJunior'].map(filter => (
-                      <button
-                        key={filter}
-                        onClick={() => { setFilterGroup(filter); setDisplayLimit(20); }}
-                        className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                           filterGroup === filter 
-                           ? 'bg-purple-600 text-white shadow-md shadow-purple-900/40' 
-                           : 'text-gray-500 hover:text-gray-300'
-                        }`}
-                      >
-                        {filter}
-                      </button>
-                   ))}
-                </div>
-
-                <button 
-                    onClick={() => setSelectedTeam(null)}
-                    className="p-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl text-gray-500 hover:text-white transition-colors border border-white/[0.06] flex-shrink-0"
-                >
-                    <X size={18} />
-                </button>
-              </div>
-            </div>
-            
+        <div className="mt-0 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
             <div className="p-4 space-y-2">
+                <div className="flex justify-end">
+                    <button 
+                        onClick={() => setSelectedTeam(null)}
+                        className="p-2 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl text-gray-500 hover:text-white transition-colors border border-white/[0.06] flex-shrink-0"
+                        title="Close Details"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
                   {/* Desktop - Exact card-row style from reference photo */}
-                  <div className="hidden md:block space-y-2">
-                      {displayedParticipants.map((p: any, index: number) => (
+                  <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
+                    <div className="col-span-1">#</div>
+                    <div className="col-span-2">Code</div>
+                    <div className="col-span-4">Participant Name</div>
+                    <div className="col-span-2">Group</div>
+                    <div className="col-span-2">Events</div>
+                    <div className="col-span-1 text-right">Actions</div>
+                  </div>
+
+                  <div className="hidden md:block space-y-2.5">
+                      {displayedParticipants.map((p: any, index: number) => {
+                        const formattedIndex = String(index + 1).padStart(2, '0');
+                        const borderAccents = [
+                          'border-l-purple-500',
+                          'border-l-purple-500',
+                          'border-l-amber-500',
+                          'border-l-amber-500',
+                          'border-l-blue-500',
+                          'border-l-blue-500',
+                          'border-l-indigo-500',
+                          'border-l-indigo-500',
+                        ];
+                        const leftBorderClass = borderAccents[index % borderAccents.length];
+
+                        return (
                         <div
                           key={p._id || index}
                           onClick={() => setViewParticipant(p)}
-                          className="flex items-center gap-4 px-5 py-4 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer hover:border-purple-500/30 hover:bg-[#161830] transition-all duration-200 group"
+                          className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
+                          style={{ animationDelay: `${index * 50}ms` }}
                         >
-                          {/* Chest Number Badge */}
-                          <div className="flex-shrink-0">
-                            <div className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-[#0F1120] border border-white/[0.1] text-purple-300 font-mono text-sm font-bold min-w-[80px] text-center">
-                              {p.chestNumber}
-                            </div>
+                          {/* # Index */}
+                          <div className="col-span-1 flex items-center">
+                            <span className="text-gray-400 font-mono text-xs font-bold">{formattedIndex}</span>
                           </div>
 
-                          {/* Name */}
-                          <div className="flex-1 min-w-0">
-                            <span className="font-semibold text-gray-100 group-hover:text-white transition-colors text-base truncate block">
+                          {/* Code */}
+                          <div className="col-span-2 flex items-center">
+                            <span className="inline-flex items-center px-3 py-1 rounded-lg bg-purple-900/30 border border-purple-500/30 text-purple-300 font-mono text-xs font-bold tracking-wide">
+                              {p.chestNumber}
+                            </span>
+                          </div>
+
+                          {/* Avatar + Name */}
+                          <div className="col-span-4 flex items-center gap-3 min-w-0">
+                            <div className="relative w-8 h-8 flex-shrink-0">
+                              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white shadow">
+                                {p.name.charAt(0)}
+                              </div>
+                              <img
+                                src={`${API_BASE_URL}/participants/${p._id}/photo`}
+                                alt={p.name}
+                                loading="lazy"
+                                className="absolute inset-0 w-full h-full rounded-full object-cover"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            </div>
+                            <span className="font-semibold text-gray-200 group-hover:text-white transition-colors text-sm truncate uppercase tracking-tight">
                               {p.name}
                             </span>
                           </div>
 
                           {/* Group Badge */}
-                          <div className="flex-shrink-0">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
-                              p.groupId?.name === 'Senior' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                              p.groupId?.name === 'Junior' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                              'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            }`}>
-                              {p.groupId?.name || '-'}
+                          <div className="col-span-2 flex items-center">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border bg-amber-500/10 text-amber-400 border-amber-500/30 uppercase tracking-wider">
+                              <Users size={13} />
+                              <span className="truncate">{p.groupId?.name || 'No Group'}</span>
                             </span>
                           </div>
 
                           {/* Events */}
-                          <div className="flex-shrink-0 w-44">
-                            {p.programs?.length > 0 ? (
-                              <div className="flex items-center gap-2 text-gray-400 text-sm">
-                                <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
-                                {p.programs.length} Events Registered
+                          <div className="col-span-2 flex items-center">
+                            <div className="flex items-center gap-1.5 text-gray-400 text-xs">
+                              <div className="flex flex-col text-[10px] leading-tight">
+                                <span className="text-gray-300 font-medium whitespace-nowrap">
+                                  {p.programs?.length > 0 ? `${p.programs.length} Events` : 'No events'}
+                                </span>
                               </div>
-                            ) : (
-                              <span className="text-gray-600 text-sm">No events</span>
-                            )}
+                            </div>
                           </div>
 
-                          {/* 3-dot menu */}
-                          <div className="flex-shrink-0">
+                          {/* Actions / 3-dot Menu */}
+                          <div className="col-span-1 flex items-center justify-end">
                             <button
-                              onClick={e => e.stopPropagation()}
-                              className="p-1.5 text-gray-600 hover:text-gray-300 hover:bg-white/[0.06] rounded-lg transition-colors"
+                              onClick={(e) => { e.stopPropagation(); }}
+                              className="p-1.5 text-gray-500 hover:text-gray-300 hover:bg-white/[0.06] rounded-lg transition-colors"
+                              title="Actions"
                             >
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                             </button>
                           </div>
                         </div>
-                      ))}
+                      )})}
 
                       {hasMoreParticipants && (
                         <div className="pt-2 text-center">
@@ -273,13 +289,13 @@ export default function TeamsPage() {
                           </button>
                         </div>
                       )}
-                      {filteredParticipants.length === 0 && (
+                      {displayedParticipants.length === 0 && (
                         <div className="py-16 text-center text-gray-600">
                           <div className="flex flex-col items-center justify-center gap-3">
                             <div className="p-4 rounded-full bg-white/[0.03] border border-white/[0.06]">
                               <Users className="opacity-30" size={32} />
                             </div>
-                            <p>No participants found in this group.</p>
+                            <p>No participants found in this team.</p>
                           </div>
                         </div>
                       )}
@@ -336,7 +352,7 @@ export default function TeamsPage() {
                                   Load More
                                 </button>
                              )}
-                             {filteredParticipants.length === 0 && (
+                             {displayedParticipants.length === 0 && (
                                 <div className="text-center py-8 text-gray-500 flex flex-col items-center">
                                      <Users className="opacity-20 mb-2" size={24} />
                                      <p className="text-sm">No participants found.</p>
@@ -439,6 +455,15 @@ export default function TeamsPage() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Team"
+        message="Are you sure you want to delete this team? This action cannot be undone."
+        confirmText="Delete"
+        onConfirm={confirmDeleteTeam}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

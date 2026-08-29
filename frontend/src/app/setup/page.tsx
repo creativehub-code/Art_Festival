@@ -4,9 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiRequest } from '@/lib/api';
 import { Shield, Smartphone, ArrowRight, User, Mail, Lock } from 'lucide-react';
+import ToastContainer from '@/components/ToastContainer';
+import { useToast } from '@/lib/useToast';
 
 export default function SetupPage() {
   const router = useRouter();
+  const { toasts, addToast, dismissToast } = useToast();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -19,10 +22,12 @@ export default function SetupPage() {
     setLoading(true);
     try {
       await apiRequest('/auth/setup', 'POST', formData);
-      alert("Admin created successfully! Please login.");
-      router.push('/login');
+      addToast({ title: 'Setup Complete', message: 'Admin created successfully! Please login.', type: 'success' });
+      setTimeout(() => {
+        router.push('/login');
+      }, 1000);
     } catch (err: any) {
-        alert(err.message);
+      addToast({ title: 'Setup Error', message: err.message || 'Failed to complete setup', type: 'error' });
     } finally {
         setLoading(false);
     }
@@ -104,6 +109,7 @@ export default function SetupPage() {
                 </button>
             </form>
         </div>
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

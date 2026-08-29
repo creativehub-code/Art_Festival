@@ -3,19 +3,22 @@
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Plus, Trash2, Users, X, UserMinus, Edit3, Globe, KeyRound } from 'lucide-react';
-import { usePrograms, useJudgeGroups, useJudges, useGroups, useInvalidate } from '@/lib/queries';
+import { usePrograms, useJudgeGroups, useJudges, useInvalidate } from '@/lib/queries';
+import ToastContainer from '@/components/ToastContainer';
+import ConfirmModal from '@/components/ConfirmModal';
+import { useToast } from '@/lib/useToast';
 
 export default function JudgeGroupsPage() {
   const { data: programs = [] as any[] } = usePrograms();
   const { data: judgeGroups = [] as any[] } = useJudgeGroups();
   const { data: allJudges = [] as any[] } = useJudges();
-  const { data: groups = [] as any[] } = useGroups();
   const { invalidateJudgeGroups, invalidateJudges } = useInvalidate();
-  const contextLoading = false;
+  const { toasts, addToast, dismissToast } = useToast();
   
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Form State
   const [groupName, setGroupName] = useState('');
@@ -66,7 +69,7 @@ export default function JudgeGroupsPage() {
     try {
       // Basic validation
       if (judgesInput.length === 0) {
-          alert('At least one judge must be added to the group.');
+          addToast({ title: 'Validation Error', message: 'At least one judge must be added to the group.', type: 'warning' });
           return;
       }
       
@@ -76,29 +79,37 @@ export default function JudgeGroupsPage() {
         assignedProgramIds
       });
       
-              setShowModal(false);
-              setGroupName('');
-              setJudgesInput([{ name: '', email: '', password: '' }]);
-              setAssignedProgramIds([]);
-              setLangFilter('');
-              setProgramSearchQ('');
+      setShowModal(false);
+      setGroupName('');
+      setJudgesInput([{ name: '', email: '', password: '' }]);
+      setAssignedProgramIds([]);
+      setLangFilter('');
+      setProgramSearchQ('');
       invalidateJudgeGroups(); // Refresh global list
       invalidateJudges(); // Also refresh judges list
+      addToast({ title: 'Success', message: 'Judge group created successfully!', type: 'success' });
     } catch (error: any) {
-      alert(error.message);
+      addToast({ title: 'Creation Error', message: error.message || 'Failed to create judge group', type: 'error' });
     }
   };
 
-  const handleDeleteGroup = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this judge group? All associated judges and their access will be removed.')) return;
+  const handleDeleteGroup = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteJudgeGroup = async () => {
+    if (!deleteConfirmId) return;
     try {
-      await apiRequest(`/judgeGroups/${id}`, 'DELETE');
+      await apiRequest(`/judgeGroups/${deleteConfirmId}`, 'DELETE');
       invalidateJudgeGroups();
       invalidateJudges();
+      addToast({ title: 'Judge Group Deleted', message: 'Judge group deleted successfully.', type: 'info' });
     } catch (error: any) {
-       alert(error.message);
+       addToast({ title: 'Delete Failed', message: error.message || 'Failed to delete judge group', type: 'error' });
+    } finally {
+      setDeleteConfirmId(null);
     }
-  }
+  };
 
   const openEditModal = (group: any) => {
       setEditingGroupId(group._id);
@@ -121,13 +132,22 @@ export default function JudgeGroupsPage() {
           setLangFilter('');
           setProgramSearchQ('');
           invalidateJudgeGroups(); // Refresh global list
+          addToast({ title: 'Programs Updated', message: 'Assigned programs updated successfully!', type: 'success' });
       } catch(error: any) {
-          alert(error.message);
+          addToast({ title: 'Update Error', message: error.message || 'Failed to update programs', type: 'error' });
       }
   };
 
   return (
     <div className="relative">
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <ConfirmModal 
+          isOpen={!!deleteConfirmId}
+          onCancel={() => setDeleteConfirmId(null)}
+          onConfirm={confirmDeleteJudgeGroup}
+          title="Delete Judge Group"
+          message="Are you sure you want to delete this judge group? All associated judges and their access will be removed."
+      />
       {/* Background ambient glow */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
       <div className="absolute top-40 right-1/4 w-96 h-96 bg-pink-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
@@ -165,7 +185,7 @@ export default function JudgeGroupsPage() {
           />
       </div>
 
-      {contextLoading && judgeGroups.length === 0 ? (
+      {judgeGroups.length === 0 ? (
         <div className="text-gray-500">Loading judge groups...</div>
       ) : (
         <div className="grid lg:grid-cols-2 gap-6 relative z-10">
@@ -283,7 +303,7 @@ export default function JudgeGroupsPage() {
           </div>
         </div>
 
-        {contextLoading && allJudges.length === 0 ? (
+        {allJudges.length === 0 ? (
           <div className="text-gray-500 text-center py-8">Loading judges...</div>
         ) : allJudges.filter(j => j.username).length === 0 ? (
           <div className="text-center py-12 bg-[#13111C]/50 rounded-2xl border border-dashed border-gray-800">
@@ -508,7 +528,7 @@ export default function JudgeGroupsPage() {
                                         </span>
                                     )}
                                     <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
-                                        Group: <span className="text-purple-400">{p.groupId?.name || groups.find(g => g._id === p.groupId)?.name || 'Unknown'}</span>
+                                        Group: <span className="text-purple-400">{p.groupId?.name || judgeGroups.find((g: any) => g._id === p.groupId)?.name || 'Unknown'}</span>
                                     </span>
                                 </div>
                             </div>
@@ -517,6 +537,115 @@ export default function JudgeGroupsPage() {
                   )}
                 </div>
               </div>
+
+              {/* Submit Action */}
+              <div className="pt-6 mt-8 border-t border-white/10 sticky bottom-0 bg-[#13111C]/95 backdrop-blur-xl pb-2">
+                  <button
+                    type="submit"
+                    className="w-full relative group overflow-hidden bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold py-4 rounded-2xl shadow-lg transition-all transform flex justify-center items-center gap-2"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 opacity-80 group-hover:opacity-100 transition-opacity" />
+                    <span className="relative z-10 flex items-center gap-2 drop-shadow-md">
+                        <Users size={20} /> Deploy Judge Panel
+                    </span>
+                  </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Programs Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-[#13111C]/95 backdrop-blur-2xl border border-white/10 p-8 rounded-3xl w-full max-w-xl shadow-2xl relative max-h-[90vh] flex flex-col shadow-purple-900/20">
+            <button 
+              onClick={() => {
+                  setShowEditModal(false);
+                  setEditingGroupId(null);
+                  setAssignedProgramIds([]);
+              }}
+              className="absolute top-6 right-6 text-gray-500 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"
+            >
+              <X size={20} />
+            </button>
+            
+            <h2 className="text-2xl font-bold mb-6 text-white flex items-center gap-3">
+                <div className="p-2.5 bg-pink-500/20 rounded-xl text-pink-400 border border-pink-500/20">
+                    <Edit3 size={24} /> 
+                </div>
+                Edit Assigned Programs
+            </h2>
+            
+            <form onSubmit={handleUpdatePrograms} className="flex flex-col flex-1 min-h-0 space-y-6">
+               <p className="text-sm text-gray-400 mb-2 leading-relaxed">
+                   Update the programs that this Judge Panel is authorized to evaluate. Changes take effect <strong className="text-white">immediately</strong>.
+               </p>
+
+              <div className="bg-black/20 border border-white/5 rounded-2xl p-2 overflow-y-auto custom-scrollbar space-y-1 flex-1 relative">
+                  {/* Search & Language Filter Pills */}
+                  <div className="flex flex-col gap-3 p-2 pb-3 border-b border-white/5 mb-1">
+                    <input 
+                        type="text"
+                        placeholder="Search programs by name..."
+                        value={programSearchQ}
+                        onChange={e => setProgramSearchQ(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-pink-500 outline-none transition-all placeholder-gray-600"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {['', 'Malayalam', 'English', 'Urdu', 'Arabic'].map(lang => (
+                        <button
+                          key={lang || 'all'}
+                          type="button"
+                          onClick={() => setLangFilter(lang)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
+                            langFilter === lang
+                              ? 'bg-pink-600 border-pink-500 text-white shadow-lg shadow-pink-900/30'
+                              : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          {lang || 'All'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {programAssignmentStatus.filter((p: any) => (!langFilter || p.language === langFilter) && p.name.toLowerCase().includes(programSearchQ.toLowerCase())).length === 0 ? (
+                      <div className="text-sm text-gray-500 italic text-center py-8">No programs available</div>
+                  ) : (
+                      programAssignmentStatus.filter((p: any) => (!langFilter || p.language === langFilter) && p.name.toLowerCase().includes(programSearchQ.toLowerCase())).map((p: any) => {
+                        // In edit mode, we only disable if it's assigned to a DIFFERENT group
+                        const editingGroup = judgeGroups.find(g => g._id === editingGroupId);
+                        const isAssignedToOtherGroup = p.assignedToGroupName && p.assignedToGroupName !== editingGroup?.name;
+
+                        return (
+                        <label key={p._id} className={`flex items-center gap-4 py-3 px-4 rounded-xl transition-all duration-200 ${isAssignedToOtherGroup ? 'opacity-50 cursor-not-allowed bg-red-900/5 border border-red-500/10' : 'cursor-pointer hover:bg-white/5 group border border-transparent hover:border-white/5'}`}>
+                            <div className="relative flex items-center justify-center shrink-0">
+                                <input
+                                type="checkbox"
+                                disabled={isAssignedToOtherGroup}
+                                checked={assignedProgramIds.includes(p._id)}
+                                onChange={e => {
+                                    if (e.target.checked) setAssignedProgramIds([...assignedProgramIds, p._id]);
+                                    else setAssignedProgramIds(assignedProgramIds.filter(id => id !== p._id));
+                                }}
+                                className="peer appearance-none w-6 h-6 border-2 border-gray-600 rounded-lg bg-black/50 checked:bg-pink-500 checked:border-pink-500 transition-all disabled:cursor-not-allowed cursor-pointer"
+                                />
+                                <svg className="absolute w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+                            <div className="flex flex-col flex-1 min-w-0">
+                                <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-2">
+                                    <span className={`truncate ${assignedProgramIds.includes(p._id) ? "text-pink-300 font-bold" : "text-gray-300 font-medium group-hover:text-white transition-colors"}`}>
+                                        {p.name}
+                                    </span>
+                                </div>
+                             </div>
+                          </label>
+                        );
+                      })
+                  )}
+                </div>
 
               {/* Submit Action */}
               <div className="pt-6 mt-8 border-t border-white/10 sticky bottom-0 bg-[#13111C]/95 backdrop-blur-xl pb-2">
@@ -632,7 +761,7 @@ export default function JudgeGroupsPage() {
                                         </span>
                                     )}
                                     <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
-                                        Group: <span className="text-purple-400">{p.groupId?.name || groups.find(g => g._id === p.groupId)?.name || 'Unknown'}</span>
+                                        Group: <span className="text-purple-400">{p.groupId?.name || judgeGroups.find((g: any) => g._id === p.groupId)?.name || 'Unknown'}</span>
                                     </span>
                                 </div>
                             </div>
@@ -656,6 +785,15 @@ export default function JudgeGroupsPage() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Judge Group"
+        message="Are you sure you want to delete this judge group? All associated judges and their access will be removed."
+        confirmText="Delete"
+        onConfirm={confirmDeleteJudgeGroup}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

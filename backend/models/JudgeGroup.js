@@ -25,4 +25,7 @@ const judgeGroupSchema = new mongoose.Schema(
   },
 );
 
+judgeGroupSchema.index({ judges: 1, assignedPrograms: 1 });
+
 module.exports = mongoose.model("JudgeGroup", judgeGroupSchema);
+

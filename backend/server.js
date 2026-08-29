@@ -123,6 +123,7 @@ app.use("/api/judges", require("./routes/judgeRoutes"));
 app.use("/api/judgeGroups", require("./routes/judgeGroupRoutes"));
 app.use("/api/settings", require("./routes/settingsRoutes"));
 app.use("/api/conversation-pairs", require("./routes/conversationPairRoutes"));
+app.use("/api/rankings", require("./routes/rankingRoutes"));
 app.use("/api/public", require("./routes/publicRoutes"));
 
 
