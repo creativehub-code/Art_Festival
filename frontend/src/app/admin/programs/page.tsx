@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users } from 'lucide-react';
+import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit } from 'lucide-react';
 import { usePrograms, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -54,14 +54,10 @@ export default function ProgramsPage() {
 
   const languages = ['Malayalam', 'Arabic', 'Urdu', 'English'];
 
-  // View Participants Modal State
-  const [viewProgram, setViewProgram] = useState<any>(null);
+  // Expandable Row State
+  const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'participants' | 'topics'>('participants');
   const { data: participants = [] as any[] } = useParticipants(); // Get all participants to filter client-side
-
-  // Filter participants for the selected program
-  const enrolledParticipants = viewProgram 
-    ? participants.filter(p => p.programs?.some((prog: any) => prog._id === viewProgram._id))
-    : [];
 
   const getProgramsByLanguage = (lang: string) => {
     return programs.filter(p => {
@@ -156,12 +152,14 @@ export default function ProgramsPage() {
                                     const leftBorderClass = borderAccents[index % borderAccents.length];
 
                                     return (
-                                        <div 
-                                            key={p._id} 
-                                            className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
-                                            style={{ animationDelay: `${index * 50}ms` }}
-                                            onClick={() => setViewProgram(p)}
-                                        >
+                                        <div key={p._id} className="flex flex-col mb-2" style={{ animationDelay: `${index * 50}ms` }}>
+                                          <div 
+                                              className={`card-animate grid grid-cols-12 gap-4 items-center px-6 py-3.5 bg-[#131629] border border-white/[0.06] border-l-2 ${leftBorderClass} ${expandedProgramId === p._id ? 'rounded-t-xl border-b-0' : 'rounded-xl'} cursor-pointer hover:border-purple-500/40 hover:bg-[#161830] transition-all duration-200 group shadow-sm`}
+                                              onClick={() => {
+                                                  setExpandedProgramId(expandedProgramId === p._id ? null : p._id);
+                                                  setActiveTab('participants');
+                                              }}
+                                          >
                                             <div className="col-span-1 flex items-center">
                                                 <span className="text-gray-400 font-mono text-xs font-bold">{formattedIndex}</span>
                                             </div>
@@ -176,6 +174,11 @@ export default function ProgramsPage() {
                                                     </span>
                                                 )}
                                                 <Users size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hidden md:block" />
+                                                {(p.topics && p.topics.length > 0) ? (
+                                                    <span className="text-[10px] text-gray-400 font-bold px-2 py-0.5 rounded-full bg-gray-800/50 border border-gray-700/50">
+                                                        {p.topics.length} Topic{p.topics.length !== 1 ? 's' : ''}
+                                                    </span>
+                                                ) : null}
                                             </div>
 
                                             <div className="col-span-3 flex items-center">
@@ -209,6 +212,27 @@ export default function ProgramsPage() {
                                                     <Trash2 size={16} />
                                                 </button>
                                             </div>
+                                          </div>
+                                          {expandedProgramId === p._id && (
+                                              <div className={`border border-white/[0.06] border-t-0 border-l-2 ${leftBorderClass} bg-[#13111C]/80 rounded-b-xl p-6`}>
+                                                  <div className="flex gap-4 border-b border-gray-800 mb-6">
+                                                      <button 
+                                                          onClick={(e) => { e.stopPropagation(); setActiveTab('participants'); }}
+                                                          className={`pb-3 px-2 font-bold text-sm transition-colors border-b-2 ${activeTab === 'participants' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                                                      >
+                                                          Participants
+                                                      </button>
+                                                      <button 
+                                                          onClick={(e) => { e.stopPropagation(); setActiveTab('topics'); }}
+                                                          className={`pb-3 px-2 font-bold text-sm transition-colors border-b-2 ${activeTab === 'topics' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                                                      >
+                                                          Topics
+                                                      </button>
+                                                  </div>
+                                                  {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} />}
+                                                  {activeTab === 'topics' && <TopicsTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} participants={participants} />}
+                                              </div>
+                                          )}
                                         </div>
                                     );
                                 })
@@ -231,7 +255,8 @@ export default function ProgramsPage() {
                         <div className="md:hidden space-y-2">
                             {langPrograms.length > 0 ? (
                                 langPrograms.map((p: any, index: number, arr: any[]) => (
-                                    <div key={p._id} className="flex items-center gap-3 px-4 py-3 bg-[#131629] border border-white/[0.07] rounded-xl cursor-pointer" onClick={() => setViewProgram(p)}>
+                                    <div key={p._id} className="flex flex-col">
+                                      <div className={`flex items-center gap-3 px-4 py-3 bg-[#131629] border border-white/[0.07] ${expandedProgramId === p._id ? 'rounded-t-xl border-b-0' : 'rounded-xl'} cursor-pointer`} onClick={() => { setExpandedProgramId(expandedProgramId === p._id ? null : p._id); setActiveTab('participants'); }}>
                                         <div className="flex-1 min-w-0">
                                             <p className="font-semibold text-gray-200 text-sm truncate flex items-center gap-2">
                                                 {p.name}
@@ -239,6 +264,9 @@ export default function ProgramsPage() {
                                                     <Users size={12} className="text-indigo-400" />
                                                 )}
                                             </p>
+                                            {(p.topics && p.topics.length > 0) && (
+                                                <p className="text-[10px] text-gray-400 font-bold">{p.topics.length} Topic{p.topics.length !== 1 ? 's' : ''}</p>
+                                            )}
                                             <p className="text-gray-500 text-xs mt-0.5">{p.groupId?.name || '-'}</p>
                                         </div>
                                         <div onClick={e => e.stopPropagation()}>
@@ -255,7 +283,18 @@ export default function ProgramsPage() {
                                                 <option value="ongoing" className="bg-[#13111C]">ONGOING</option>
                                                 <option value="completed" className="bg-[#13111C]">COMPLETED</option>
                                             </select>
+                                            </div>
                                         </div>
+                                      {expandedProgramId === p._id && (
+                                          <div className="border border-white/[0.07] border-t-0 bg-[#13111C]/80 rounded-b-xl p-4">
+                                              <div className="flex gap-4 border-b border-gray-800 mb-4">
+                                                  <button onClick={(e) => { e.stopPropagation(); setActiveTab('participants'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'participants' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Participants</button>
+                                                  <button onClick={(e) => { e.stopPropagation(); setActiveTab('topics'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'topics' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Topics</button>
+                                              </div>
+                                              {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} />}
+                                              {activeTab === 'topics' && <TopicsTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} participants={participants} />}
+                                          </div>
+                                      )}
                                     </div>
                                 ))
                             ) : (
@@ -290,76 +329,6 @@ export default function ProgramsPage() {
       />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
-      {/* View Participants Modal */}
-      {viewProgram && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={() => setViewProgram(null)}>
-            <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
-                
-                <div className="flex justify-between items-center p-6 border-b border-[#2D283E] bg-[#13111C]/50">
-                    <div>
-                         <div className="flex items-center gap-3 mb-1">
-                            <h3 className="text-2xl font-bold text-white">{viewProgram.name}</h3>
-                            <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs font-bold border border-purple-500/30 uppercase tracking-wide">
-                                {viewProgram.language}
-                            </span>
-                         </div>
-                         <p className="text-gray-400 text-sm flex items-center gap-2">
-                            <Layers size={14} /> {viewProgram.groupId?.name || 'All Groups'} · 
-                            <Users size={14} /> {enrolledParticipants.length} Participants
-                         </p>
-                    </div>
-                    <button onClick={() => setViewProgram(null)} className="text-gray-500 hover:text-white transition-colors bg-gray-800/50 p-2 rounded-lg hover:bg-gray-700">
-                        <X size={20} />
-                    </button>
-                </div>
-                
-                <div className="p-0 overflow-y-auto custom-scrollbar flex-1 bg-[#13111C]">
-                    {enrolledParticipants.length > 0 ? (
-                        <div className="divide-y divide-[#2D283E]">
-                            {enrolledParticipants.map((p: any, i) => (
-                                <div key={p._id} className="flex items-center gap-4 p-4 hover:bg-[#1E1B2E] transition-colors">
-                                    <div className="font-mono text-gray-500 text-sm w-8">{i + 1}</div>
-                                    <div className="relative w-12 h-12 flex-shrink-0">
-                                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-sm font-bold text-white border-2 border-white/10">
-                                            {p.name.charAt(0)}
-                                        </div>
-                                        <img 
-                                            src={`${API_BASE_URL}/participants/${p._id}/photo`} 
-                                            alt={p.name} 
-                                            loading="lazy"
-                                            className="absolute inset-0 w-full h-full rounded-full object-cover border-2 border-purple-500/30"
-                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                        />
-                                    </div>
-                                    <div className="flex-1">
-                                        <h4 className="text-white font-bold">{p.name}</h4>
-                                        <p className="text-gray-500 text-sm flex items-center gap-2">
-                                            <span className="font-mono text-purple-400">{p.chestNumber}</span> · 
-                                            <span>{p.teamId?.name || 'No Team'}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center py-20 text-gray-500">
-                            <Users size={48} className="opacity-20 mb-4" />
-                            <p>No participants enrolled in this program yet.</p>
-                        </div>
-                    )}
-                </div>
-                
-                <div className="p-4 border-t border-[#2D283E] bg-[#1E1B2E] flex justify-end">
-                    <button 
-                        onClick={() => setViewProgram(null)}
-                        className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-bold transition-colors"
-                    >
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -558,6 +527,183 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                     </div>
                 </form>
             </div>
+        </div>
+    );
+}
+
+function ParticipantsTab({ program, participants }: { program: any; participants: any[] }) {
+    const enrolledParticipants = participants.filter(p => p.programs?.some((prog: any) => prog._id === program._id || prog === program._id));
+    
+    if (enrolledParticipants.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-10 text-gray-500">
+                <Users size={32} className="opacity-20 mb-3" />
+                <p className="text-sm">No participants enrolled in this program yet.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="divide-y divide-[#2D283E] custom-scrollbar overflow-y-auto max-h-[400px] pr-2">
+            {enrolledParticipants.map((p: any, i) => (
+                <div key={p._id} className="flex items-center gap-4 py-3 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
+                    <div className="font-mono text-gray-500 text-sm w-6">{i + 1}</div>
+                    <div className="relative w-10 h-10 flex-shrink-0">
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border-2 border-white/10">
+                            {p.name.charAt(0)}
+                        </div>
+                        <img 
+                            src={`${API_BASE_URL}/participants/${p._id}/photo`} 
+                            alt={p.name} 
+                            loading="lazy"
+                            className="absolute inset-0 w-full h-full rounded-full object-cover border-2 border-purple-500/30"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                    </div>
+                    <div className="flex-1">
+                        <h4 className="text-gray-200 font-bold text-sm">{p.name}</h4>
+                        <p className="text-gray-500 text-xs flex items-center gap-2">
+                            <span className="font-mono text-purple-400">{p.chestNumber}</span> &middot; 
+                            <span>{p.teamId?.name || 'No Team'}</span>
+                            {p.programTopics?.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId && (
+                                <>
+                                    &middot;
+                                    <span className="text-purple-400/80 italic flex items-center gap-1">
+                                        <FileText size={10} />
+                                        {program.topics?.find((t:any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
+                                    </span>
+                                </>
+                            )}
+                        </p>
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function TopicsTab({ program, refreshPrograms, addToast, participants }: { program: any; refreshPrograms: () => void; addToast: any; participants: any[] }) {
+    const [isAdding, setIsAdding] = useState(false);
+    const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
+    const [title, setTitle] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            if (editingTopicId) {
+                await apiRequest(`/programs/${program._id}/topics/${editingTopicId}`, 'PUT', { title });
+                addToast({ title: 'Topic Updated', message: 'Topic updated successfully.', type: 'success' });
+            } else {
+                await apiRequest(`/programs/${program._id}/topics`, 'POST', { title });
+                addToast({ title: 'Topic Added', message: 'Topic added successfully.', type: 'success' });
+            }
+            refreshPrograms();
+            setIsAdding(false);
+            setEditingTopicId(null);
+            setTitle('');
+        } catch (error: any) {
+            addToast({ title: 'Error', message: error.message || 'Failed to save topic', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteConfirmId) return;
+        try {
+            await apiRequest(`/programs/${program._id}/topics/${deleteConfirmId}`, 'DELETE');
+            refreshPrograms();
+            addToast({ title: 'Topic Deleted', message: 'Topic removed successfully.', type: 'info' });
+        } catch (error: any) {
+            addToast({ title: 'Error', message: error.message || 'Failed to delete topic', type: 'error' });
+        } finally {
+            setDeleteConfirmId(null);
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-between items-center">
+                <h4 className="text-gray-300 font-bold text-sm">Manage Topics</h4>
+                {!isAdding && !editingTopicId && (
+                    <button 
+                        onClick={() => setIsAdding(true)}
+                        className="bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                    >
+                        <Plus size={14} /> Add Topic
+                    </button>
+                )}
+            </div>
+
+            {(isAdding || editingTopicId) && (
+                <form onSubmit={handleSubmit} className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        placeholder="e.g. Environmental Protection"
+                        className="flex-1 bg-[#13111C] border border-[#2D283E] text-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-purple-500"
+                        required
+                        autoFocus
+                    />
+                    <button type="submit" disabled={loading} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50">
+                        {loading ? 'Saving...' : 'Save'}
+                    </button>
+                    <button type="button" onClick={() => { setIsAdding(false); setEditingTopicId(null); setTitle(''); }} className="bg-gray-800 text-gray-300 px-4 py-2 rounded-lg text-sm font-bold">
+                        Cancel
+                    </button>
+                </form>
+            )}
+
+            <div className="space-y-2">
+                {(!program.topics || program.topics.length === 0) && !isAdding && (
+                    <div className="text-gray-500 text-sm py-4 text-center border border-dashed border-[#2D283E] rounded-xl">
+                        No topics added to this program yet.
+                    </div>
+                )}
+                {program.topics?.map((topic: any, idx: number) => (
+                    <div key={topic._id} className="flex justify-between items-center bg-[#131629] border border-white/[0.04] p-3 rounded-lg group">
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-3">
+                                <span className="text-gray-500 text-xs font-mono">{idx + 1}.</span>
+                                <span className="text-gray-200 text-sm font-medium">{topic.title}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] ml-6 text-gray-500">
+                                <span className="bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded border border-purple-500/20 flex items-center gap-1">
+                                    <Users size={10} />
+                                    {participants.filter(p => p.programTopics?.some((pt:any) => (pt.programId?._id || pt.programId) === program._id && pt.topicId === topic._id)).length} participants
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex gap-1">
+                            <button 
+                                onClick={() => { setEditingTopicId(topic._id); setTitle(topic.title); setIsAdding(false); }}
+                                className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-colors"
+                            >
+                                <Edit size={14} />
+                            </button>
+                            <button 
+                                onClick={() => setDeleteConfirmId(topic._id)}
+                                className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <ConfirmModal
+                isOpen={!!deleteConfirmId}
+                title="Delete Topic"
+                message="Are you sure you want to delete this topic?"
+                confirmText="Delete"
+                onConfirm={confirmDelete}
+                onCancel={() => setDeleteConfirmId(null)}
+            />
         </div>
     );
 }

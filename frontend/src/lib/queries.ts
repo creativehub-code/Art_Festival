@@ -7,6 +7,7 @@ export interface Program {
   name: string;
   status: string;
   language?: string;
+  topics?: { _id: string; title: string }[];
   updatedAt?: string;
   groupId?: Group;
   maxMarks?: number;

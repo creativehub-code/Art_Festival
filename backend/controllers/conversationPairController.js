@@ -8,7 +8,7 @@ const Program = require("../models/Program");
 // @access  Admin
 const createPair = async (req, res) => {
   try {
-    const { participantIds, programId, primaryParticipantId } = req.body;
+    const { participantIds, programId, primaryParticipantId, topicId } = req.body;
 
     // ── 1. Presence check ─────────────────────────────────────────────────────
     if (!participantIds || !Array.isArray(participantIds) || participantIds.length < 2 || !programId || !primaryParticipantId) {
@@ -31,6 +31,13 @@ const createPair = async (req, res) => {
     }
     if (!program.isConversation) {
       return res.status(400).json({ message: "This program is not a Conversation program" });
+    }
+
+    if (topicId) {
+      const topicExists = program.topics.some(t => t._id.toString() === topicId.toString());
+      if (!topicExists) {
+        return res.status(400).json({ message: "Topic does not belong to the selected program" });
+      }
     }
 
     // ── 3. Fetch all participants ─────────────────────────────────────────────
@@ -85,6 +92,7 @@ const createPair = async (req, res) => {
           primaryParticipantId,
           teamId: firstP.teamId,
           groupId: firstP.groupId,
+          topicId: topicId || null,
         }], { session });
 
         const pair = pairs[0];
@@ -95,6 +103,22 @@ const createPair = async (req, res) => {
           { $addToSet: { programs: programId } },
           { session }
         );
+
+        // Also add the topic mapping to participants' programTopics for consistency
+        if (topicId) {
+          // First remove any existing mapping for this program to avoid duplicates
+          await Participant.updateMany(
+            { _id: { $in: participantIds } },
+            { $pull: { programTopics: { programId } } },
+            { session }
+          );
+          // Then push the new one
+          await Participant.updateMany(
+            { _id: { $in: participantIds } },
+            { $push: { programTopics: { programId, topicId } } },
+            { session }
+          );
+        }
 
         // ── 8. Return populated pair ──────────────────────────────────────────────
         populated = await ConversationPair.findById(pair._id)

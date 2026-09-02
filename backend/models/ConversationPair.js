@@ -32,6 +32,9 @@ const conversationPairSchema = new mongoose.Schema(
       ref: "Group",
       required: true,
     },
+    topicId: {
+      type: mongoose.Schema.Types.ObjectId,
+    },
   },
   {
     timestamps: true,

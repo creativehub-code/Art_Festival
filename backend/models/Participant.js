@@ -33,6 +33,19 @@ const participantSchema = new mongoose.Schema(
         ref: "Program",
       },
     ],
+    programTopics: [
+      {
+        programId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Program",
+          required: true,
+        },
+        topicId: {
+          type: mongoose.Schema.Types.ObjectId,
+          required: true,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
