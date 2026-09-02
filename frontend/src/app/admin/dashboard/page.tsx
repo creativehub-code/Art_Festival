@@ -58,16 +58,54 @@ export default function AdminDashboard() {
   };
 
   const activePrograms = programs.filter((p: any) => p.status !== 'completed');
-  const filteredActivePrograms = activePrograms.filter((p: any) => {
-    const matchesLanguage = selectedLanguage === 'All' || (p.language || 'English') === selectedLanguage;
-    return matchesLanguage;
-  });
+  const filteredActivePrograms = [...activePrograms]
+    .filter((p: any) => {
+      const matchesLanguage = selectedLanguage === 'All' || (p.language || 'English') === selectedLanguage;
+      return matchesLanguage;
+    })
+    .sort((a: any, b: any) => {
+      if (selectedLanguage === 'All') {
+        const aPos = a.globalPosition;
+        const bPos = b.globalPosition;
+        if (aPos !== null && aPos !== undefined && bPos !== null && bPos !== undefined) {
+          return aPos - bPos;
+        }
+        if (aPos !== null && aPos !== undefined) return -1;
+        if (bPos !== null && bPos !== undefined) return 1;
+        const catA = a.groupId?.name || '';
+        const catB = b.groupId?.name || '';
+        if (catA !== catB) return catA.localeCompare(catB);
+        return a.name.localeCompare(b.name);
+      } else {
+        const aPos = a.languagePosition;
+        const bPos = b.languagePosition;
+        if (aPos !== null && aPos !== undefined && bPos !== null && bPos !== undefined) {
+          return aPos - bPos;
+        }
+        if (aPos !== null && aPos !== undefined) return -1;
+        if (bPos !== null && bPos !== undefined) return 1;
+        const catA = a.groupId?.name || '';
+        const catB = b.groupId?.name || '';
+        if (catA !== catB) return catA.localeCompare(catB);
+        return a.name.localeCompare(b.name);
+      }
+    });
 
   const sortedTeams = [...teams].sort((a: any, b: any) => (b.totalScore || 0) - (a.totalScore || 0));
   const leadingTeam = sortedTeams.length > 0 ? sortedTeams[0] : null;
   const totalPoints = teams.reduce((acc: number, t: any) => acc + (t.totalScore || 0), 0);
 
-  const upcomingEvents = programs.filter((p: any) => p.status === 'upcoming').slice(0, 3);
+  const upcomingEvents = [...programs]
+    .filter((p: any) => p.status === 'upcoming')
+    .sort((a: any, b: any) => {
+      const aPos = a.globalPosition;
+      const bPos = b.globalPosition;
+      if (aPos !== null && aPos !== undefined && bPos !== null && bPos !== undefined) return aPos - bPos;
+      if (aPos !== null && aPos !== undefined) return -1;
+      if (bPos !== null && bPos !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 3);
 
   // Line Chart Data
   const lineChartData = {
@@ -488,6 +526,17 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
                   <span className="px-2.5 py-0.5 rounded-md bg-white/[0.04] text-gray-400 text-xs font-medium border border-white/[0.06] whitespace-nowrap">
                     {program.language || 'English'}
                   </span>
+
+                  {program.globalPosition != null && (
+                    <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 text-xs font-bold border border-blue-500/20 whitespace-nowrap">
+                      #G{program.globalPosition}
+                    </span>
+                  )}
+                  {program.languagePosition != null && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 text-xs font-bold border border-amber-500/20 whitespace-nowrap">
+                      #{(program.language || 'English').substring(0, 2)}{program.languagePosition}
+                    </span>
+                  )}
                 </div>
 
                 {/* Right Side Controls (Status Select Pill + Actions) */}

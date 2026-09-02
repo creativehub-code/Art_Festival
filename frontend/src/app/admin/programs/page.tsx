@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit } from 'lucide-react';
+import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown } from 'lucide-react';
 import { usePrograms, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -19,8 +19,11 @@ export default function ProgramsPage() {
   const [selectedGroupFilters, setSelectedGroupFilters] = useState<Record<string, string>>({});
   
   // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [modalDefaultLanguage, setModalDefaultLanguage] = useState('');
+
+  // Edit modal state
+  const [editingProgram, setEditingProgram] = useState<any | null>(null);
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {
@@ -47,9 +50,9 @@ export default function ProgramsPage() {
     }
   };
 
-  const openModal = (language: string = '') => {
+  const openCreateModal = (language: string = '') => {
     setModalDefaultLanguage(language);
-    setIsModalOpen(true);
+    setIsCreateModalOpen(true);
   };
 
   const languages = ['Malayalam', 'Arabic', 'Urdu', 'English'];
@@ -57,16 +60,26 @@ export default function ProgramsPage() {
   // Expandable Row State
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'participants' | 'topics'>('participants');
-  const { data: participants = [] as any[] } = useParticipants(); // Get all participants to filter client-side
+  const { data: participants = [] as any[] } = useParticipants();
 
+  /** Sort programs within a language by languagePosition (nulls last), then by name */
   const getProgramsByLanguage = (lang: string) => {
-    return programs.filter(p => {
-        const matchesLang = (p.language || 'English') === lang;
-        const filter = selectedGroupFilters[lang];
-        const matchesGroup = filter 
-            ? p.groupId?.name?.trim().toLowerCase() === filter.toLowerCase() 
-            : true;
-        return matchesLang && matchesGroup;
+    const filtered = programs.filter((p: any) => {
+      const matchesLang = (p.language || 'English') === lang;
+      const filter = selectedGroupFilters[lang];
+      const matchesGroup = filter 
+        ? p.groupId?.name?.trim().toLowerCase() === filter.toLowerCase() 
+        : true;
+      return matchesLang && matchesGroup;
+    });
+
+    return [...filtered].sort((a: any, b: any) => {
+      const aPos = a.languagePosition;
+      const bPos = b.languagePosition;
+      if (aPos !== null && aPos !== undefined && bPos !== null && bPos !== undefined) return aPos - bPos;
+      if (aPos !== null && aPos !== undefined) return -1;
+      if (bPos !== null && bPos !== undefined) return 1;
+      return a.name.localeCompare(b.name);
     });
   };
 
@@ -82,7 +95,7 @@ export default function ProgramsPage() {
             <p className="text-gray-400">Create, organize and track competition items.</p>
         </div>
         <button 
-          onClick={() => openModal()} 
+          onClick={() => openCreateModal()} 
           className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-900/20 transition-all"
         >
           <Plus size={20} />
@@ -101,7 +114,7 @@ export default function ProgramsPage() {
                         <div className="flex items-center gap-4">
                             <h3 className="text-3xl font-bold text-purple-400">{language} Programs</h3>
                             <button 
-                                onClick={() => openModal(language)}
+                                onClick={() => openCreateModal(language)}
                                 className="bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white p-2 rounded-lg transition-colors border border-gray-700"
                                 title={`Add ${language} Program`}
                             >
@@ -132,8 +145,9 @@ export default function ProgramsPage() {
                         {/* Desktop Header */}
                         <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
                             <div className="col-span-1">#</div>
-                            <div className="col-span-5">Program Name</div>
-                            <div className="col-span-3">Group</div>
+                            <div className="col-span-4">Program Name</div>
+                            <div className="col-span-2">Group</div>
+                            <div className="col-span-2 flex items-center gap-1"><ArrowUpDown size={10} /> Order</div>
                             <div className="col-span-2">Status</div>
                             <div className="col-span-1 text-right">Actions</div>
                         </div>
@@ -141,8 +155,7 @@ export default function ProgramsPage() {
                         {/* Desktop List */}
                         <div className="hidden md:block space-y-2.5">
                             {langPrograms.length > 0 ? (
-                                langPrograms.map((p, index, arr) => {
-                                    const formattedIndex = String(arr.length - index).padStart(2, '0');
+                                langPrograms.map((p: any, index: number) => {
                                     const borderAccents = [
                                         'border-l-purple-500',
                                         'border-l-amber-500',
@@ -161,10 +174,12 @@ export default function ProgramsPage() {
                                               }}
                                           >
                                             <div className="col-span-1 flex items-center">
-                                                <span className="text-gray-400 font-mono text-xs font-bold">{formattedIndex}</span>
+                                                <span className="text-gray-400 font-mono text-xs font-bold">
+                                                    {p.languagePosition != null ? String(p.languagePosition).padStart(2, '0') : '--'}
+                                                </span>
                                             </div>
                                             
-                                            <div className="col-span-5 flex items-center gap-2 min-w-0">
+                                            <div className="col-span-4 flex items-center gap-2 min-w-0">
                                                 <span className="font-semibold text-gray-200 group-hover:text-white transition-colors text-sm truncate tracking-tight">
                                                     {p.name}
                                                 </span>
@@ -181,10 +196,26 @@ export default function ProgramsPage() {
                                                 ) : null}
                                             </div>
 
-                                            <div className="col-span-3 flex items-center">
+                                            <div className="col-span-2 flex items-center">
                                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border bg-purple-500/10 text-purple-400 border-purple-500/30 uppercase tracking-wider">
                                                     <span className="truncate">{p.groupId?.name || '-'}</span>
                                                 </span>
+                                            </div>
+
+                                            {/* Position badges */}
+                                            <div className="col-span-2 flex items-center gap-1.5">
+                                                {p.globalPosition != null ? (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                        <Hash size={9} />G{p.globalPosition}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] text-gray-600 font-mono">—</span>
+                                                )}
+                                                {p.languagePosition != null ? (
+                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                        <Hash size={9} />{language.substring(0,2)}{p.languagePosition}
+                                                    </span>
+                                                ) : null}
                                             </div>
 
                                             <div className="col-span-2 flex items-center" onClick={e => e.stopPropagation()}>
@@ -203,13 +234,20 @@ export default function ProgramsPage() {
                                                 </select>
                                             </div>
 
-                                            <div className="col-span-1 flex items-center justify-end" onClick={e => e.stopPropagation()}>
+                                            <div className="col-span-1 flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                                                 <button 
+                                                    onClick={() => setEditingProgram(p)}
+                                                    className="text-gray-600 hover:text-blue-400 p-2 rounded-lg hover:bg-blue-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                                                    title="Edit Program"
+                                                >
+                                                    <Edit size={15} />
+                                                </button>
                                                  <button 
                                                     onClick={() => handleDelete(p._id)}
                                                     className="text-gray-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"
                                                     title="Delete Program"
                                                 >
-                                                    <Trash2 size={16} />
+                                                    <Trash2 size={15} />
                                                 </button>
                                             </div>
                                           </div>
@@ -254,7 +292,7 @@ export default function ProgramsPage() {
                         {/* Mobile list view */}
                         <div className="md:hidden space-y-2">
                             {langPrograms.length > 0 ? (
-                                langPrograms.map((p: any, index: number, arr: any[]) => (
+                                langPrograms.map((p: any, index: number) => (
                                     <div key={p._id} className="flex flex-col">
                                       <div className={`flex items-center gap-3 px-4 py-3 bg-[#131629] border border-white/[0.07] ${expandedProgramId === p._id ? 'rounded-t-xl border-b-0' : 'rounded-xl'} cursor-pointer`} onClick={() => { setExpandedProgramId(expandedProgramId === p._id ? null : p._id); setActiveTab('participants'); }}>
                                         <div className="flex-1 min-w-0">
@@ -264,12 +302,31 @@ export default function ProgramsPage() {
                                                     <Users size={12} className="text-indigo-400" />
                                                 )}
                                             </p>
-                                            {(p.topics && p.topics.length > 0) && (
-                                                <p className="text-[10px] text-gray-400 font-bold">{p.topics.length} Topic{p.topics.length !== 1 ? 's' : ''}</p>
-                                            )}
+                                            {/* Position badges on mobile */}
+                                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                {p.globalPosition != null && (
+                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full">
+                                                        <Hash size={8} />G{p.globalPosition}
+                                                    </span>
+                                                )}
+                                                {p.languagePosition != null && (
+                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                                                        <Hash size={8} />{language.substring(0,2)}{p.languagePosition}
+                                                    </span>
+                                                )}
+                                                {(p.topics && p.topics.length > 0) && (
+                                                    <p className="text-[10px] text-gray-400 font-bold">{p.topics.length} Topic{p.topics.length !== 1 ? 's' : ''}</p>
+                                                )}
+                                            </div>
                                             <p className="text-gray-500 text-xs mt-0.5">{p.groupId?.name || '-'}</p>
                                         </div>
-                                        <div onClick={e => e.stopPropagation()}>
+                                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                            <button 
+                                                onClick={() => setEditingProgram(p)}
+                                                className="text-gray-600 hover:text-blue-400 p-1.5 rounded transition-colors"
+                                            >
+                                                <Edit size={14} />
+                                            </button>
                                             <select 
                                                 value={p.status || 'upcoming'}
                                                 onChange={(e) => handleStatusUpdate(p._id, e.target.value)}
@@ -310,15 +367,27 @@ export default function ProgramsPage() {
         })}
       </div>
 
-      {/* Modal */}
+      {/* Create Modal */}
       <CreateProgramModal 
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
           defaultLanguage={modalDefaultLanguage}
           groups={groups}
           refreshPrograms={invalidatePrograms}
           addToast={addToast}
       />
+
+      {/* Edit Modal */}
+      {editingProgram && (
+          <EditProgramModal
+              program={editingProgram}
+              groups={groups}
+              onClose={() => setEditingProgram(null)}
+              refreshPrograms={invalidatePrograms}
+              addToast={addToast}
+          />
+      )}
+
       <ConfirmModal
         isOpen={!!deleteConfirmId}
         title="Delete Program"
@@ -333,6 +402,39 @@ export default function ProgramsPage() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Position input helper
+// ---------------------------------------------------------------------------
+function PositionInput({ label, sublabel, value, onChange, id }: {
+    label: string;
+    sublabel: string;
+    value: string;
+    onChange: (v: string) => void;
+    id: string;
+}) {
+    return (
+        <div className="space-y-1">
+            <label htmlFor={id} className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Hash size={11} className="text-purple-400" />{label}
+            </label>
+            <input
+                id={id}
+                type="number"
+                min="1"
+                step="1"
+                placeholder="—"
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                className="w-full p-2.5 sm:p-3 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600 text-sm"
+            />
+            <p className="text-[10px] text-gray-500">{sublabel}</p>
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Create Program Modal
+// ---------------------------------------------------------------------------
 function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshPrograms, addToast }: { 
     isOpen: boolean; 
     onClose: () => void; 
@@ -347,11 +449,20 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
         status: 'upcoming',
         language: defaultLanguage || 'English',
         isConversation: false,
+        globalPosition: '',
+        languagePosition: '',
     });
     const [createMultiple, setCreateMultiple] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    // Update language if defaultLanguage changes
+    // Body scroll lock
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = ''; };
+        }
+    }, [isOpen]);
+
     useEffect(() => {
         if (defaultLanguage) {
             setForm(prev => ({ ...prev, language: defaultLanguage }));
@@ -364,13 +475,21 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
         e.preventDefault();
         setLoading(true);
         try {
-            await apiRequest('/programs', 'POST', form);
+            const payload: any = {
+                name: form.name,
+                groupId: form.groupId,
+                status: form.status,
+                language: form.language,
+                isConversation: form.isConversation,
+                globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
+                languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+            };
+            await apiRequest('/programs', 'POST', payload);
             refreshPrograms();
             addToast({ title: 'Success', message: 'Program created successfully!', type: 'success' });
             
             if (createMultiple) {
-                // Keep language and group, clear name
-                setForm(prev => ({ ...prev, name: '' }));
+                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '' }));
                 const nameInput = document.getElementById('program-name-input');
                 if (nameInput) nameInput.focus();
             } else {
@@ -386,62 +505,80 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 relative" onClick={e => e.stopPropagation()}>
-                
-                {/* Decorative background glow */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-purple-900/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200"
+            onClick={onClose}
+        >
+            {/* Modal shell: wider max-w-2xl and responsive vertical layout */}
+            <div
+                className="relative bg-[#1E1B2E] border border-[#2D283E] rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col animate-in zoom-in-95 duration-200"
+                style={{ maxHeight: 'calc(100vh - 2rem)' }}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Decorative glow */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-purple-900/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none z-0" />
 
-                <div className="flex justify-between items-center p-8 border-b border-[#2D283E] bg-[#13111C]/50 relative z-10">
+                {/* ── HEADER (never scrolls) ── */}
+                <div className="relative z-10 flex-shrink-0 flex justify-between items-center px-6 py-4 sm:px-8 border-b border-[#2D283E] bg-[#13111C]/60 rounded-t-3xl">
                     <div>
-                         <h3 className="text-2xl font-bold text-white">Create Program</h3>
-                         <p className="text-gray-400 text-sm">Add a new competition item to the list.</p>
+                        <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">Create Program</h3>
+                        <p className="text-gray-400 text-xs sm:text-sm mt-0.5">Add a new competition item to the list.</p>
                     </div>
-                    <button onClick={onClose} className="text-gray-500 hover:text-white transition-colors bg-gray-800/50 p-2 rounded-lg hover:bg-gray-700">
-                        <X size={20} />
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Close dialog"
+                        className="flex-shrink-0 ml-4 text-gray-500 hover:text-white transition-colors bg-gray-800/50 p-2 rounded-lg hover:bg-gray-700"
+                    >
+                        <X size={18} />
                     </button>
                 </div>
-                
-                <form onSubmit={handleSubmit} className="p-8 space-y-6 relative z-10">
-                    
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                             <label className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                                <FileText size={14} className="text-purple-400" /> Program Name
-                             </label>
-                             <input 
+
+                {/* ── CONTENT AREA ── */}
+                <form
+                    onSubmit={handleSubmit}
+                    className="relative z-10 flex flex-col flex-1 min-h-0"
+                >
+                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 py-4 sm:px-8 sm:py-5 space-y-4">
+
+                        {/* Program Name */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <FileText size={13} className="text-purple-400" /> Program Name
+                            </label>
+                            <input 
                                 id="program-name-input"
                                 placeholder="e.g. Speech, Song, Quiz"
                                 value={form.name}
                                 onChange={e => setForm({...form, name: e.target.value})} 
-                                className="w-full p-4 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600"
+                                className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600 text-sm"
                                 autoFocus
                                 required
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                                    <Globe size={14} className="text-blue-400" /> Language
+                        {/* Language + Group */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Globe size={13} className="text-blue-400" /> Language
                                 </label>
                                 <select
                                     value={form.language}
                                     onChange={e => setForm({...form, language: e.target.value})}
-                                    className="w-full p-4 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none"
+                                    className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
                                 >
                                     {languages.map(lang => <option key={lang} value={lang}>{lang}</option>)}
                                 </select>
                             </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                                    <Layers size={14} className="text-green-400" /> Group
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Layers size={13} className="text-green-400" /> Group
                                 </label>
                                 <select
                                     value={form.groupId}
                                     onChange={e => setForm({...form, groupId: e.target.value})}
-                                    className="w-full p-4 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none"
+                                    className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
                                     required
                                 >
                                     <option value="">Select Group</option>
@@ -450,19 +587,18 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                             <label className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                                Status
-                             </label>
+                        {/* Status */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
                             <div className="grid grid-cols-3 gap-2">
                                 {['upcoming', 'ongoing', 'completed'].map(status => (
                                     <button
                                         key={status}
                                         type="button"
                                         onClick={() => setForm({...form, status})}
-                                        className={`p-3 rounded-lg border text-sm capitalize font-medium transition-all ${
+                                        className={`p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm capitalize font-bold transition-all ${
                                             form.status === status 
-                                            ? 'bg-purple-600 border-purple-500 text-white shadow-lg shadow-purple-900/20' 
+                                            ? 'bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-900/20' 
                                             : 'bg-[#13111C] border-[#2D283E] text-gray-400 hover:border-gray-600'
                                         }`}
                                     >
@@ -472,58 +608,294 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                             </div>
                         </div>
 
-                        {/* Conversation Program Toggle */}
-                        <label className="flex items-start gap-3 p-4 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] hover:border-indigo-500/30 transition-all group">
-                            <div className={`w-5 h-5 rounded border flex items-center justify-center mt-0.5 transition-colors ${
+                        {/* Group Program toggle */}
+                        <label className="flex items-center gap-3 p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] hover:border-indigo-500/30 transition-all group">
+                            <div className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
                                 form.isConversation ? 'bg-indigo-600 border-indigo-500' : 'border-gray-600 group-hover:border-indigo-400'
                             }`}>
                                 {form.isConversation && <CheckCircle size={12} className="text-white" />}
                             </div>
-                            <input
-                                type="checkbox"
-                                checked={form.isConversation}
-                                onChange={e => setForm({...form, isConversation: e.target.checked})}
-                                className="hidden"
-                            />
-                            <div>
-                                <p className="text-sm font-bold text-white flex items-center gap-2">
+                            <input type="checkbox" checked={form.isConversation} onChange={e => setForm({...form, isConversation: e.target.checked})} className="hidden" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
                                     <Users size={14} className="text-indigo-400" /> Group Program
                                 </p>
-                                <p className="text-xs text-gray-500 mt-0.5">Requires multiple participants (same team &amp; group) registered as a group</p>
+                                <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">Requires multiple participants (same team &amp; group) registered as a group</p>
                             </div>
                         </label>
-                    </div>
 
-                    <div className="pt-4 border-t border-[#2D283E] flex flex-col gap-4">
-                        <label className="flex items-center gap-3 p-3 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] transition-colors group">
-                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${createMultiple ? 'bg-purple-600 border-purple-600' : 'border-gray-600 group-hover:border-purple-400'}`}>
-                                {createMultiple && <CheckCircle size={12} className="text-white" />}
+                        {/* Program Order */}
+                        <div className="p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-[#2D283E] space-y-2.5">
+                            <div className="flex items-center gap-2">
+                                <ArrowUpDown size={13} className="text-purple-400" />
+                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Program Order</span>
+                                <span className="text-[10px] text-gray-500 ml-auto">Optional</span>
                             </div>
-                            <input 
-                                type="checkbox" 
-                                checked={createMultiple}
-                                onChange={e => setCreateMultiple(e.target.checked)}
-                                className="hidden"
-                            />
-                            <span className="text-sm text-gray-300 font-medium">Create another after submission</span>
-                        </label>
-
-                        <div className="flex gap-3">
-                            <button 
-                                type="button" 
-                                onClick={onClose}
-                                className="flex-1 px-6 py-4 rounded-xl border border-gray-700 text-gray-300 font-bold hover:bg-gray-800 hover:text-white transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                type="submit" 
-                                disabled={loading}
-                                className="flex-[2] px-6 py-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform active:scale-95"
-                            >
-                                {loading ? 'Creating...' : 'Create Program'}
-                            </button>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <PositionInput
+                                    id="create-global-pos"
+                                    label="Global Position"
+                                    sublabel="Order among ALL programs"
+                                    value={form.globalPosition}
+                                    onChange={v => setForm({...form, globalPosition: v})}
+                                />
+                                <PositionInput
+                                    id="create-lang-pos"
+                                    label={`${form.language} Position`}
+                                    sublabel={`Order within ${form.language} programs`}
+                                    value={form.languagePosition}
+                                    onChange={v => setForm({...form, languagePosition: v})}
+                                />
+                            </div>
                         </div>
+
+                        {/* Create another toggle */}
+                        <label className="flex items-center gap-3 p-2.5 sm:p-3 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] transition-colors group">
+                            <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${createMultiple ? 'bg-purple-600 border-purple-600' : 'border-gray-600 group-hover:border-purple-400'}`}>
+                                {createMultiple && <CheckCircle size={10} className="text-white" />}
+                            </div>
+                            <input type="checkbox" checked={createMultiple} onChange={e => setCreateMultiple(e.target.checked)} className="hidden" />
+                            <span className="text-xs sm:text-sm text-gray-300 font-medium">Create another after submission</span>
+                        </label>
+
+                    </div>{/* end content */}
+
+                    {/* ── FOOTER (never scrolls) ── */}
+                    <div className="flex-shrink-0 px-6 py-3.5 sm:px-8 border-t border-[#2D283E] bg-[#13111C]/40 rounded-b-3xl flex gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="flex-1 px-5 py-3 rounded-xl border border-gray-700 text-gray-300 text-xs sm:text-sm font-bold hover:bg-gray-800 hover:text-white transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="flex-[2] px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+                        >
+                            {loading ? 'Creating...' : 'Create Program'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Edit Program Modal
+// ---------------------------------------------------------------------------
+function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast }: {
+    program: any;
+    groups: any[];
+    onClose: () => void;
+    refreshPrograms: () => void;
+    addToast: any;
+}) {
+    const [form, setForm] = useState({
+        name: program.name || '',
+        groupId: program.groupId?._id || program.groupId || '',
+        status: program.status || 'upcoming',
+        language: program.language || 'English',
+        isConversation: program.isConversation || false,
+        globalPosition: program.globalPosition != null ? String(program.globalPosition) : '',
+        languagePosition: program.languagePosition != null ? String(program.languagePosition) : '',
+    });
+    const [loading, setLoading] = useState(false);
+    const languages = ['Malayalam', 'Arabic', 'Urdu', 'English'];
+
+    // Body scroll lock
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = ''; };
+    }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            const payload: any = {
+                name: form.name,
+                groupId: form.groupId,
+                status: form.status,
+                language: form.language,
+                isConversation: form.isConversation,
+                globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
+                languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+            };
+            await apiRequest(`/programs/${program._id}`, 'PATCH', payload);
+            refreshPrograms();
+            addToast({ title: 'Program Updated', message: 'Program saved successfully!', type: 'success' });
+            onClose();
+        } catch (e: any) {
+            addToast({ title: 'Update Error', message: e.message || 'Failed to update program', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200"
+            onClick={onClose}
+        >
+            {/* Modal shell: wider max-w-2xl and responsive vertical layout */}
+            <div
+                className="relative bg-[#1E1B2E] border border-[#2D283E] rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col animate-in zoom-in-95 duration-200"
+                style={{ maxHeight: 'calc(100vh - 2rem)' }}
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Decorative glow */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-900/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none z-0" />
+
+                {/* ── HEADER (never scrolls) ── */}
+                <div className="relative z-10 flex-shrink-0 flex justify-between items-center px-6 py-4 sm:px-8 border-b border-[#2D283E] bg-[#13111C]/60 rounded-t-3xl">
+                    <div className="min-w-0">
+                        <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">Edit Program</h3>
+                        <p className="text-gray-400 text-xs sm:text-sm mt-0.5 truncate max-w-xs sm:max-w-md">{program.name}</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Close dialog"
+                        className="flex-shrink-0 ml-4 text-gray-500 hover:text-white transition-colors bg-gray-800/50 p-2 rounded-lg hover:bg-gray-700"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* ── CONTENT AREA ── */}
+                <form
+                    onSubmit={handleSubmit}
+                    className="relative z-10 flex flex-col flex-1 min-h-0"
+                >
+                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 py-4 sm:px-8 sm:py-5 space-y-4">
+
+                        {/* Program Name */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <FileText size={13} className="text-purple-400" /> Program Name
+                            </label>
+                            <input
+                                placeholder="e.g. Speech, Song, Quiz"
+                                value={form.name}
+                                onChange={e => setForm({...form, name: e.target.value})}
+                                className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600 text-sm"
+                                required
+                            />
+                        </div>
+
+                        {/* Language + Group */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Globe size={13} className="text-blue-400" /> Language
+                                </label>
+                                <select
+                                    value={form.language}
+                                    onChange={e => setForm({...form, language: e.target.value})}
+                                    className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
+                                >
+                                    {languages.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Layers size={13} className="text-green-400" /> Group
+                                </label>
+                                <select
+                                    value={form.groupId}
+                                    onChange={e => setForm({...form, groupId: e.target.value})}
+                                    className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
+                                    required
+                                >
+                                    <option value="">Select Group</option>
+                                    {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Status */}
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {['upcoming', 'ongoing', 'completed'].map(status => (
+                                    <button
+                                        key={status}
+                                        type="button"
+                                        onClick={() => setForm({...form, status})}
+                                        className={`p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm capitalize font-bold transition-all ${
+                                            form.status === status
+                                            ? 'bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-900/20'
+                                            : 'bg-[#13111C] border-[#2D283E] text-gray-400 hover:border-gray-600'
+                                        }`}
+                                    >
+                                        {status}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Group Program toggle */}
+                        <label className="flex items-center gap-3 p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] hover:border-indigo-500/30 transition-all group">
+                            <div className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                                form.isConversation ? 'bg-indigo-600 border-indigo-500' : 'border-gray-600 group-hover:border-indigo-400'
+                            }`}>
+                                {form.isConversation && <CheckCircle size={12} className="text-white" />}
+                            </div>
+                            <input type="checkbox" checked={form.isConversation} onChange={e => setForm({...form, isConversation: e.target.checked})} className="hidden" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                                    <Users size={14} className="text-indigo-400" /> Group Program
+                                </p>
+                                <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">Requires multiple participants (same team &amp; group) registered as a group</p>
+                            </div>
+                        </label>
+
+                        {/* Program Order */}
+                        <div className="p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-blue-500/20 space-y-2.5">
+                            <div className="flex items-center gap-2">
+                                <ArrowUpDown size={13} className="text-blue-400" />
+                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Program Order</span>
+                                <span className="text-[10px] text-gray-500 ml-auto">Leave blank to remove from ordering</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <PositionInput
+                                    id="edit-global-pos"
+                                    label="Global Position"
+                                    sublabel="Order among ALL programs"
+                                    value={form.globalPosition}
+                                    onChange={v => setForm({...form, globalPosition: v})}
+                                />
+                                <PositionInput
+                                    id="edit-lang-pos"
+                                    label={`${form.language} Position`}
+                                    sublabel={`Order within ${form.language} programs`}
+                                    value={form.languagePosition}
+                                    onChange={v => setForm({...form, languagePosition: v})}
+                                />
+                            </div>
+                        </div>
+
+                    </div>{/* end content */}
+
+                    {/* ── FOOTER (never scrolls) ── */}
+                    <div className="flex-shrink-0 px-6 py-3.5 sm:px-8 border-t border-[#2D283E] bg-[#13111C]/40 rounded-b-3xl flex gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="flex-1 px-5 py-3 rounded-xl border border-gray-700 text-gray-300 text-xs sm:text-sm font-bold hover:bg-gray-800 hover:text-white transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="flex-[2] px-5 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
+                        >
+                            {loading ? 'Saving...' : 'Save Changes'}
+                        </button>
                     </div>
                 </form>
             </div>

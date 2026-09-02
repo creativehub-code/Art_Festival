@@ -78,9 +78,23 @@ export default function JudgeDashboard() {
     return matchSearch && matchGroup;
   });
 
-  const filteredPrograms = programs.filter((p: any) =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPrograms = [...programs]
+    .filter((p: any) =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a: any, b: any) => {
+      const aLP = a.languagePosition;
+      const bLP = b.languagePosition;
+      if (aLP !== null && aLP !== undefined && bLP !== null && bLP !== undefined) return aLP - bLP;
+      if (aLP !== null && aLP !== undefined) return -1;
+      if (bLP !== null && bLP !== undefined) return 1;
+      const aGP = a.globalPosition;
+      const bGP = b.globalPosition;
+      if (aGP !== null && aGP !== undefined && bGP !== null && bGP !== undefined) return aGP - bGP;
+      if (aGP !== null && aGP !== undefined) return -1;
+      if (bGP !== null && bGP !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
 
   const groupColor = (name: string) => {
     if (name === 'Senior') return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
