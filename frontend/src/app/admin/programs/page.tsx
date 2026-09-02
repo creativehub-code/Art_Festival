@@ -66,9 +66,10 @@ export default function ProgramsPage() {
   const getProgramsByLanguage = (lang: string) => {
     const filtered = programs.filter((p: any) => {
       const matchesLang = (p.language || 'English') === lang;
-      const filter = selectedGroupFilters[lang];
-      const matchesGroup = filter 
-        ? p.groupId?.name?.trim().toLowerCase() === filter.toLowerCase() 
+      const filterGroupId = selectedGroupFilters[lang];
+      const programGroupId = p.groupId?._id ? String(p.groupId._id) : (p.groupId ? String(p.groupId) : '');
+      const matchesGroup = filterGroupId 
+        ? programGroupId === String(filterGroupId)
         : true;
       return matchesLang && matchesGroup;
     });
@@ -122,23 +123,35 @@ export default function ProgramsPage() {
                             </button>
                         </div>
                         
-                        <div className="flex gap-2">
-                            {['All', 'Senior', 'Junior', 'SubJunior'].map(filter => (
-                                <button
-                                    key={filter}
-                                    onClick={() => setSelectedGroupFilters(prev => ({
-                                        ...prev,
-                                        [language]: filter === 'All' ? '' : filter
-                                    }))}
-                                    className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                                        (filter === 'All' && !selectedGroupFilters[language]) || selectedGroupFilters[language] === filter
-                                        ? 'bg-purple-600 text-white'
-                                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                                    }`}
-                                >
-                                    {filter}
-                                </button>
-                            ))}
+                        <div className="flex gap-2 overflow-x-auto custom-scrollbar max-w-full pb-1">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedGroupFilters(prev => ({ ...prev, [language]: '' }))}
+                                className={`px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap ${
+                                    !selectedGroupFilters[language]
+                                    ? 'bg-purple-600 text-white'
+                                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                }`}
+                            >
+                                All
+                            </button>
+                            {groups.map((g: any) => {
+                                const isSelected = selectedGroupFilters[language] === g._id;
+                                return (
+                                    <button
+                                        key={g._id}
+                                        type="button"
+                                        onClick={() => setSelectedGroupFilters(prev => ({ ...prev, [language]: g._id }))}
+                                        className={`px-3 py-1 rounded text-sm font-medium transition-colors whitespace-nowrap ${
+                                            isSelected
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                        }`}
+                                    >
+                                        {g.name}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                     <div className="space-y-2">
