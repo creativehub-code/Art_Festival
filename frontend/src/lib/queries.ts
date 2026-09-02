@@ -12,6 +12,8 @@ export interface Program {
   groupId?: Group;
   maxMarks?: number;
   isConversation?: boolean;
+  globalPosition?: number | null;
+  languagePosition?: number | null;
 }
 
 export interface Team {
