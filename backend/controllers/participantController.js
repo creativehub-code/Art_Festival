@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Participant = require("../models/Participant");
 const Team = require("../models/Team");
 const Group = require("../models/Group");
+const ConversationPair = require("../models/ConversationPair");
 const sendError = require("../utils/errorResponse");
 
 function escapeRegex(string) {
@@ -177,7 +178,41 @@ const getParticipantPhoto = async (req, res) => {
 const createParticipant = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { name, chestNumber, teamId, groupId, programs } = req.body;
+    const { name, chestNumber, teamId, groupId, programs, programTopics } = req.body;
+
+    let validProgramTopics = [];
+    if (programTopics && Array.isArray(programTopics) && programTopics.length > 0) {
+      const Program = require("../models/Program");
+      const programIds = programTopics.map(pt => pt.programId);
+      const programsData = await Program.find({ _id: { $in: programIds } });
+      const programsMap = Object.fromEntries(programsData.map(p => [p._id.toString(), p]));
+
+      const uniquePrograms = new Set();
+      for (const pt of programTopics) {
+        if (!pt.programId || !pt.topicId) continue;
+        const pidStr = pt.programId.toString();
+        const tidStr = pt.topicId.toString();
+
+        if (uniquePrograms.has(pidStr)) {
+          return res.status(400).json({ message: "A participant can only have one topic per program" });
+        }
+        uniquePrograms.add(pidStr);
+
+        const program = programsMap[pidStr];
+        if (!program) return res.status(400).json({ message: `Program ${pidStr} not found` });
+
+        const topicExists = program.topics.some(t => t._id.toString() === tidStr);
+        if (!topicExists) return res.status(400).json({ message: "Topic does not belong to the selected program" });
+
+        // Synchronize: Ensure program is in the participants `programs` array
+        const pArray = programs || [];
+        if (!pArray.some(p => p.toString() === pidStr)) {
+          return res.status(400).json({ message: "Cannot assign topic for a program the participant is not registered for" });
+        }
+
+        validProgramTopics.push({ programId: pt.programId, topicId: pt.topicId });
+      }
+    }
 
     const participantExists = await Participant.findOne({ chestNumber });
     if (participantExists) {
@@ -195,6 +230,7 @@ const createParticipant = async (req, res) => {
         teamId,
         groupId,
         programs: programs || [],
+        programTopics: validProgramTopics,
         image: req.body.image || "",
       });
       
@@ -222,7 +258,7 @@ const updateParticipant = async (req, res) => {
     }
 
     // Security: Whitelist fields to prevent mass assignment
-    const { name, chestNumber, teamId, groupId, programs, image } = req.body;
+    const { name, chestNumber, teamId, groupId, programs, programTopics, image } = req.body;
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (chestNumber !== undefined) updateData.chestNumber = chestNumber;
@@ -230,6 +266,47 @@ const updateParticipant = async (req, res) => {
     if (groupId !== undefined) updateData.groupId = groupId;
     if (programs !== undefined) updateData.programs = programs;
     if (image !== undefined) updateData.image = image;
+
+    // Handle programTopics logic
+    // If programs is updated, we must ensure programTopics stays synchronized.
+    let finalPrograms = programs !== undefined ? programs : participant.programs.map(p => p.toString());
+    let incomingProgramTopics = programTopics !== undefined ? programTopics : participant.programTopics || [];
+    
+    let validProgramTopics = [];
+    if (incomingProgramTopics && Array.isArray(incomingProgramTopics) && incomingProgramTopics.length > 0) {
+      const Program = require("../models/Program");
+      const programIds = incomingProgramTopics.map(pt => pt.programId);
+      const programsData = await Program.find({ _id: { $in: programIds } });
+      const programsMap = Object.fromEntries(programsData.map(p => [p._id.toString(), p]));
+
+      const uniquePrograms = new Set();
+      for (const pt of incomingProgramTopics) {
+        if (!pt.programId || !pt.topicId) continue;
+        const pidStr = pt.programId.toString();
+        const tidStr = pt.topicId.toString();
+
+        if (uniquePrograms.has(pidStr)) {
+          return res.status(400).json({ message: "A participant can only have one topic per program" });
+        }
+        
+        // Sync check: ONLY keep this topic mapping if the participant is actually registered in this program
+        if (!finalPrograms.some(p => p.toString() === pidStr)) {
+          continue; // Strip it out
+        }
+
+        uniquePrograms.add(pidStr);
+
+        const program = programsMap[pidStr];
+        if (!program) return res.status(400).json({ message: `Program ${pidStr} not found` });
+
+        const topicExists = program.topics.some(t => t._id.toString() === tidStr);
+        if (!topicExists) return res.status(400).json({ message: "Topic does not belong to the selected program" });
+
+        validProgramTopics.push({ programId: pt.programId, topicId: pt.topicId });
+      }
+    }
+    // Always update programTopics to ensure synchronization
+    updateData.programTopics = validProgramTopics;
 
     const oldTeamId = participant.teamId?.toString();
     const newTeamId = updateData.teamId;
@@ -242,6 +319,59 @@ const updateParticipant = async (req, res) => {
     let updatedParticipant;
 
     await session.withTransaction(async () => {
+      // 1. Group Program Topic Synchronization
+      if (validProgramTopics.length > 0) {
+        for (const pt of validProgramTopics) {
+          const programIdStr = pt.programId.toString();
+          const newTopicIdStr = pt.topicId.toString();
+          
+          // Find if this participant is part of a ConversationPair for this program
+          const conversationPair = await ConversationPair.findOne({
+            programId: pt.programId,
+            participants: participant._id
+          }).session(session);
+
+          if (conversationPair) {
+            // Is it a change?
+            const currentPairTopicIdStr = conversationPair.topicId ? conversationPair.topicId.toString() : null;
+            if (currentPairTopicIdStr !== newTopicIdStr) {
+              // A. Update ConversationPair
+              conversationPair.topicId = pt.topicId;
+              await conversationPair.save({ session });
+
+              // B. Update programTopics for all OTHER members
+              const otherMembers = conversationPair.participants.filter(
+                id => id.toString() !== participant._id.toString()
+              );
+
+              if (otherMembers.length > 0) {
+                // We use updateMany with aggregation pipeline for complex array updates, 
+                // OR we can just find them and update them in memory. In memory is safer to ensure we don't duplicate/corrupt.
+                const otherParticipants = await Participant.find({ _id: { $in: otherMembers } }).session(session);
+                
+                for (const otherP of otherParticipants) {
+                  let pTopics = [...(otherP.programTopics || [])];
+                  
+                  // Remove old mapping for this program
+                  const existingIdx = pTopics.findIndex(t => t.programId && t.programId.toString() === programIdStr);
+                  if (existingIdx !== -1) {
+                    pTopics.splice(existingIdx, 1);
+                  }
+                  
+                  // Add new mapping
+                  pTopics.push({ programId: pt.programId, topicId: pt.topicId });
+                  
+                  // Save
+                  otherP.programTopics = pTopics;
+                  await otherP.save({ session });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Finally update the current participant
       updatedParticipant = await Participant.findByIdAndUpdate(
         req.params.id,
         updateData,

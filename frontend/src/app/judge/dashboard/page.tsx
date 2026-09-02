@@ -206,7 +206,16 @@ export default function JudgeDashboard() {
                   </div>
                 </div>
                 <div className="mb-4 flex-1">
-                  <h3 className={`text-lg font-bold text-white mb-2 transition-colors ${isEvaluated ? '' : 'group-hover:text-purple-300'}`}>{program.name}</h3>
+                  <h3 className={`text-lg font-bold text-white mb-1 transition-colors ${isEvaluated ? '' : 'group-hover:text-purple-300'}`}>{program.name}</h3>
+                  {program.topics && program.topics.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {program.topics.map((t: any) => (
+                        <span key={t._id} className="text-gray-400 text-xs italic bg-white/5 px-1.5 py-0.5 rounded border border-white/5 line-clamp-1" title={t.title}>
+                          {t.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {program.language && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/5 text-blue-400 border border-blue-500/10 text-[10px] font-bold uppercase tracking-wider">

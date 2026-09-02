@@ -25,6 +25,15 @@ const programSchema = new mongoose.Schema(
       required: true,
       default: "English",
     },
+    topics: [
+      {
+        title: {
+          type: String,
+          trim: true,
+          required: true,
+        },
+      },
+    ],
     // When true, this program requires exactly two participants registered as a pair
     isConversation: {
       type: Boolean,

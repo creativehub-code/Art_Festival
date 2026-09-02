@@ -6,12 +6,24 @@ const {
   createProgram,
   updateProgram,
   deleteProgram,
+  getPublicPrograms,
   getProgramParticipants,
+  addTopic,
+  updateTopic,
+  deleteTopic,
 } = require("../controllers/programController");
 
-router.route("/").get(protect, getPrograms).post(protect, restrictTo("admin"), createProgram);
-router.route("/:programId/participants").get(protect, getProgramParticipants);
-router.route("/:id").patch(protect, restrictTo("admin"), updateProgram).delete(protect, restrictTo("admin"), deleteProgram);
+router.get("/", protect, getPrograms);
+router.post("/", protect, restrictTo("admin"), createProgram);
+router.put("/:id", protect, restrictTo("admin"), updateProgram);
+router.patch("/:id", protect, restrictTo("admin"), updateProgram);
+router.delete("/:id", protect, restrictTo("admin"), deleteProgram);
+router.get("/public", getPublicPrograms);
+router.get("/:programId/participants", protect, getProgramParticipants);
+
+// Topic management
+router.post("/:id/topics", protect, restrictTo("admin"), addTopic);
+router.put("/:id/topics/:topicId", protect, restrictTo("admin"), updateTopic);
+router.delete("/:id/topics/:topicId", protect, restrictTo("admin"), deleteTopic);
 
 module.exports = router;
-

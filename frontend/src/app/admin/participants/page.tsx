@@ -164,10 +164,12 @@ export default function ParticipantsPage() {
     teamId: string;
     groupId: string;
     selectedPrograms: string[];
+    selectedTopics: Record<string, string>;
     language: string;
     programId: string;
+    topicId: string;
     image: string;
-  }>({ name: '', chestNumber: '', teamId: '', groupId: '', selectedPrograms: [], language: '', programId: '', image: '' });
+  }>({ name: '', chestNumber: '', teamId: '', groupId: '', selectedPrograms: [], selectedTopics: {}, language: '', programId: '', topicId: '', image: '' });
   
   const [search, setSearch] = useState('');
   const [filterGroupId, setFilterGroupId] = useState('');
@@ -175,13 +177,16 @@ export default function ParticipantsPage() {
   const [hoveredParticipant, setHoveredParticipant] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [viewParticipant, setViewParticipant] = useState<any>(null);
+  const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const [showAddProgramModal, setShowAddProgramModal] = useState(false);
   const [selectedParticipantForProgram, setSelectedParticipantForProgram] = useState<any>(null);
   const [programForm, setProgramForm] = useState<{
     language: string; 
     programId: string;
+    topicId: string;
     selectedPrograms: string[];
-  }>({ language: '', programId: '', selectedPrograms: [] });
+    selectedTopics: Record<string, string>;
+  }>({ language: '', programId: '', topicId: '', selectedPrograms: [], selectedTopics: {} });
 
   // Derive unique languages from programs
   const languages = useMemo(() => Array.from(new Set(programs.map(p => p.language))), [programs]);
@@ -319,12 +324,22 @@ export default function ParticipantsPage() {
           finalPrograms.push(form.programId);
       }
 
+      const finalSelectedTopics = { ...form.selectedTopics };
+      if (form.programId && form.topicId && !finalSelectedTopics[form.programId]) {
+          finalSelectedTopics[form.programId] = form.topicId;
+      }
+
+      const programTopics = finalPrograms
+        .filter(pid => finalSelectedTopics[pid])
+        .map(pid => ({ programId: pid, topicId: finalSelectedTopics[pid] }));
+
       await apiRequest('/participants', 'POST', {
         name: form.name,
         chestNumber: form.chestNumber,
         teamId: form.teamId,
         groupId: form.groupId,
         programs: finalPrograms,
+        programTopics,
         image: form.image
       });
       invalidateParticipants();
@@ -337,7 +352,7 @@ export default function ParticipantsPage() {
         invalidateGroupParticipants(form.groupId);
       }
       // Keep teamId and groupId for faster entry, reset others
-      setForm(prev => ({ ...prev, name: '', chestNumber: '', selectedPrograms: [], programId: '', language: '', image: '' }));
+      setForm(prev => ({ ...prev, name: '', chestNumber: '', selectedPrograms: [], selectedTopics: {}, programId: '', topicId: '', language: '', image: '' }));
       addToast({ title: 'Success', message: 'Participant added!', type: 'success' });
     } catch (e: any) {
       addToast({ title: 'Error', message: e.message || 'Failed to add participant', type: 'error' });
@@ -513,23 +528,60 @@ export default function ParticipantsPage() {
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-widest ml-1">Select Program</label>
                         <CustomSelect 
                             value={form.programId}
-                            onChange={(val: string) => setForm({...form, programId: val})}
+                            onChange={(val: string) => setForm({...form, programId: val, topicId: ''})}
                             options={filteredProgramsMain.map((p: any) => ({ value: p._id, label: p.name }))}
                             placeholder="Choose a program..."
                             icon={List}
                             disabled={!form.language}
                         />
                     </div>
+                    {form.programId && programs.find(p => p._id === form.programId)?.topics?.length > 0 && (
+                      <div className="flex-[2] w-full space-y-2">
+                          <label className="text-xs font-bold text-gray-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                              Select Topic 
+                              {programs.find(p => p._id === form.programId)?.isConversation && (
+                                  <span className="bg-purple-900/50 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded text-[10px] normal-case tracking-normal shadow-sm" title="Updates will automatically sync to all members in the group">
+                                      Group Sync
+                                  </span>
+                              )}
+                          </label>
+                          <CustomSelect 
+                              value={form.topicId}
+                              onChange={(val: string) => setForm({...form, topicId: val})}
+                              options={programs.find(p => p._id === form.programId)?.topics.map((t: any) => ({ value: t._id, label: t.title })) || []}
+                              placeholder="Choose a topic..."
+                              icon={FileText}
+                          />
+                      </div>
+                    )}
                     <button 
                          type="button"
                          onClick={(e) => {
                            e.preventDefault();
-                           if (form.programId && !form.selectedPrograms.includes(form.programId)) {
-                             setForm(prev => ({
-                               ...prev,
-                               selectedPrograms: [...prev.selectedPrograms, prev.programId],
-                               programId: ''
-                             }));
+                           const selectedProg = programs.find(p => p._id === form.programId);
+                           if (selectedProg?.topics?.length > 0 && !form.topicId) {
+                               addToast({ title: 'Topic Required', message: 'Please select a topic for this program', type: 'warning' });
+                               return;
+                           }
+                           
+                           if (form.programId && (!form.selectedPrograms.includes(form.programId) || (form.selectedPrograms.includes(form.programId) && form.selectedTopics[form.programId] !== form.topicId))) {
+                             setForm(prev => {
+                               const newSelectedTopics = { ...prev.selectedTopics };
+                               if (prev.topicId) {
+                                   newSelectedTopics[prev.programId] = prev.topicId;
+                               }
+                               const newPrograms = prev.selectedPrograms.includes(prev.programId) 
+                                   ? prev.selectedPrograms 
+                                   : [...prev.selectedPrograms, prev.programId];
+                                   
+                               return {
+                                 ...prev,
+                                 selectedPrograms: newPrograms,
+                                 selectedTopics: newSelectedTopics,
+                                 programId: '',
+                                 topicId: ''
+                               }
+                             });
                            }
                          }}
                          disabled={!form.programId}
@@ -545,15 +597,31 @@ export default function ParticipantsPage() {
                         {form.selectedPrograms.map(progId => {
                             const prog = programs.find(p => p._id === progId);
                             return (
-                                <div key={progId} className="flex items-center gap-2 bg-purple-900/30 text-purple-200 border border-purple-500/30 px-4 py-2 rounded-lg text-sm group hover:border-purple-400 transition-colors">
-                                    <span className="font-medium">{prog?.name || 'Unknown Program'}</span>
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setForm(prev => ({ ...prev, selectedPrograms: prev.selectedPrograms.filter(id => id !== progId) }))}
-                                        className="text-purple-400 hover:text-white transition-colors"
-                                    >
-                                        <X size={16} />
-                                    </button>
+                                <div key={progId} className="flex flex-col gap-1 bg-purple-900/30 text-purple-200 border border-purple-500/30 px-4 py-2 rounded-lg text-sm group hover:border-purple-400 transition-colors">
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium">{prog?.name || 'Unknown Program'}</span>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setForm(prev => {
+                                                const newTopics = { ...prev.selectedTopics };
+                                                delete newTopics[progId];
+                                                return {
+                                                    ...prev, 
+                                                    selectedPrograms: prev.selectedPrograms.filter(id => id !== progId),
+                                                    selectedTopics: newTopics
+                                                }
+                                            })}
+                                            className="text-purple-400 hover:text-white transition-colors"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                    {form.selectedTopics[progId] && (
+                                        <span className="text-xs text-purple-400/80 italic flex items-center gap-1">
+                                            <FileText size={10} /> 
+                                            {prog?.topics?.find((t: any) => t._id === form.selectedTopics[progId])?.title || 'Unknown Topic'}
+                                        </span>
+                                    )}
                                 </div>
                             );
                         })}
@@ -573,7 +641,7 @@ export default function ParticipantsPage() {
              <button 
                 type="button"
                 onClick={() => {
-                    setForm({ name: '', chestNumber: '', teamId: '', groupId: '', selectedPrograms: [], language: '', programId: '', image: '' });
+                    setForm({ name: '', chestNumber: '', teamId: '', groupId: '', selectedPrograms: [], selectedTopics: {}, language: '', programId: '', topicId: '', image: '' });
                     setShowCreateForm(false);
                 }}
                 className="px-6 py-3 rounded-xl border border-gray-700 text-gray-300 font-bold hover:bg-gray-800 transition-colors"
@@ -833,7 +901,7 @@ export default function ParticipantsPage() {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
             <div className="bg-[#1E1B2E] p-8 rounded-3xl border border-[#2D283E] w-full max-w-3xl relative shadow-2xl">
                 <button 
-                    onClick={() => { setShowAddProgramModal(false); setProgramForm({ language: '', programId: '', selectedPrograms: [] }); }}
+                    onClick={() => { setShowAddProgramModal(false); setProgramForm({ language: '', programId: '', topicId: '', selectedPrograms: [], selectedTopics: {} }); }}
                     className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors"
                 >
                     <X size={24} />
@@ -870,13 +938,31 @@ export default function ParticipantsPage() {
                         <button
                             onClick={(e) => {
                                 e.preventDefault();
-                                if (programForm.programId && !programForm.selectedPrograms.includes(programForm.programId)) {
-                                    setProgramForm(prev => ({
-                                        ...prev,
-                                        selectedPrograms: [...prev.selectedPrograms, prev.programId],
-                                        programId: ''
-                                    }));
-                                }
+                                            const selectedProg = programs.find(p => p._id === programForm.programId);
+                                            if (selectedProg?.topics?.length > 0 && !programForm.topicId) {
+                                                addToast({ title: 'Topic Required', message: 'Please select a topic for this program', type: 'warning' });
+                                                return;
+                                            }
+                                            
+                                            if (programForm.programId && (!programForm.selectedPrograms.includes(programForm.programId) || (programForm.selectedPrograms.includes(programForm.programId) && programForm.selectedTopics[programForm.programId] !== programForm.topicId))) {
+                                                setProgramForm(prev => {
+                                                    const newSelectedTopics = { ...prev.selectedTopics };
+                                                    if (prev.topicId) {
+                                                        newSelectedTopics[prev.programId] = prev.topicId;
+                                                    }
+                                                    const newPrograms = prev.selectedPrograms.includes(prev.programId) 
+                                                        ? prev.selectedPrograms 
+                                                        : [...prev.selectedPrograms, prev.programId];
+                                                        
+                                                    return {
+                                                        ...prev,
+                                                        selectedPrograms: newPrograms,
+                                                        selectedTopics: newSelectedTopics,
+                                                        programId: '',
+                                                        topicId: ''
+                                                    }
+                                                });
+                                            }
                             }}
                             disabled={!programForm.programId}
                             className="bg-purple-600 hover:bg-purple-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white rounded-xl font-bold h-[56px] w-[56px] shrink-0 flex items-center justify-center shadow-lg hover:shadow-purple-900/30 transition-all duration-300"
@@ -891,15 +977,37 @@ export default function ParticipantsPage() {
                         {programForm.selectedPrograms.map(progId => {
                             const prog = programs.find(p => p._id === progId);
                             return (
-                            <div key={progId} className="flex items-center gap-2 bg-purple-500/10 text-purple-200 border border-purple-500/20 px-3 py-1.5 rounded-lg text-sm">
-                                {prog?.name || 'Unknown Program'}
-                                <button 
-                                type="button" 
-                                onClick={() => setProgramForm(prev => ({ ...prev, selectedPrograms: prev.selectedPrograms.filter(id => id !== progId) }))}
-                                className="hover:text-white"
-                                >
-                                <X size={14} />
-                                </button>
+                            <div key={progId} className="flex flex-col gap-1 bg-purple-500/10 text-purple-200 border border-purple-500/20 px-3 py-1.5 rounded-lg text-sm max-w-full">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold truncate">{prog?.name || 'Unknown Program'}</span>
+                                    <button 
+                                    type="button" 
+                                    onClick={() => setProgramForm(prev => {
+                                        const newTopics = { ...prev.selectedTopics };
+                                        delete newTopics[progId];
+                                        return {
+                                            ...prev, 
+                                            selectedPrograms: prev.selectedPrograms.filter(id => id !== progId),
+                                            selectedTopics: newTopics
+                                        }
+                                    })}
+                                    className="hover:text-white shrink-0"
+                                    >
+                                    <X size={14} />
+                                    </button>
+                                </div>
+                                {prog?.language && (
+                                    <span className="text-xs text-purple-300/90 flex items-center gap-1 truncate">
+                                        <Globe size={10} className="shrink-0" /> 
+                                        {prog.language}
+                                    </span>
+                                )}
+                                {programForm.selectedTopics[progId] && (
+                                    <span className="text-xs text-purple-400/80 italic flex items-center gap-1 truncate">
+                                        <FileText size={10} className="shrink-0" /> 
+                                        {prog?.topics?.find((t: any) => t._id === programForm.selectedTopics[progId])?.title || 'Unknown Topic'}
+                                    </span>
+                                )}
                             </div>
                             );
                         })}
@@ -916,6 +1024,11 @@ export default function ParticipantsPage() {
                                 finalProgramsToAdd.push(programForm.programId);
                             }
 
+                            const finalSelectedTopicsToAdd = { ...programForm.selectedTopics };
+                            if (programForm.programId && programForm.topicId && !finalSelectedTopicsToAdd[programForm.programId]) {
+                                finalSelectedTopicsToAdd[programForm.programId] = programForm.topicId;
+                            }
+
                             try {
                                 const newPrograms = selectedParticipantForProgram.programs 
                                     ? [...selectedParticipantForProgram.programs.map((p:any) => p._id || p), ...finalProgramsToAdd] 
@@ -924,16 +1037,26 @@ export default function ParticipantsPage() {
                                 // Removing duplicates just in case
                                 const uniquePrograms = Array.from(new Set(newPrograms));
 
+                                const mergedProgramTopics = [...(selectedParticipantForProgram.programTopics || [])];
+                                finalProgramsToAdd.forEach(pid => {
+                                    if (finalSelectedTopicsToAdd[pid]) {
+                                        const idx = mergedProgramTopics.findIndex(pt => pt.programId === pid || pt.programId?._id === pid);
+                                        if (idx !== -1) mergedProgramTopics.splice(idx, 1);
+                                        mergedProgramTopics.push({ programId: pid, topicId: finalSelectedTopicsToAdd[pid] });
+                                    }
+                                });
+
                                 await apiRequest(`/participants/${selectedParticipantForProgram._id}`, 'PUT', {
                                     ...selectedParticipantForProgram,
                                     programs: uniquePrograms,
+                                    programTopics: mergedProgramTopics,
                                     teamId: selectedParticipantForProgram.teamId?._id, // Ensure we send IDs not objects
                                     groupId: selectedParticipantForProgram.groupId?._id 
                                 });
                                 
                                 addToast({ title: 'Success', message: "Programs added!", type: 'success' });
                                 setShowAddProgramModal(false);
-                                setProgramForm({ language: '', programId: '', selectedPrograms: [] });
+                                setProgramForm({ language: '', programId: '', topicId: '', selectedPrograms: [], selectedTopics: {} });
                                 invalidateParticipants();
                                 if (selectedParticipantForProgram.teamId?._id) invalidateTeamParticipants(selectedParticipantForProgram.teamId._id);
                                 if (selectedParticipantForProgram.groupId?._id) invalidateGroupParticipants(selectedParticipantForProgram.groupId._id);
@@ -1033,7 +1156,7 @@ export default function ParticipantsPage() {
                                         <CustomSelect 
                                             value={programForm.programId}
                                             onChange={(val: string) => {
-                                                setProgramForm(prev => ({ ...prev, programId: val }));
+                                                setProgramForm(prev => ({ ...prev, programId: val, topicId: '' }));
                                                 setPartnerSearchQ('');
                                                 setSelectedPartners([]);
                                                 setPartnerResults([]);
@@ -1046,15 +1169,53 @@ export default function ParticipantsPage() {
                                         />
                                     </div>
                                     
+                                    {programForm.programId && programs.find(p => p._id === programForm.programId)?.topics?.length > 0 && (
+                                      <div className="flex-[2] w-full space-y-2">
+                                          <label className="text-sm font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
+                                              Select Topic
+                                              {programs.find(p => p._id === programForm.programId)?.isConversation && (
+                                                  <span className="bg-purple-900/50 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded text-[10px] normal-case tracking-normal shadow-sm" title="Updates will automatically sync to all members in the group">
+                                                      Group Sync
+                                                  </span>
+                                              )}
+                                          </label>
+                                          <CustomSelect 
+                                              value={programForm.topicId}
+                                              onChange={(val: string) => setProgramForm(prev => ({ ...prev, topicId: val }))}
+                                              options={programs.find(p => p._id === programForm.programId)?.topics.map((t: any) => ({ value: t._id, label: t.title })) || []}
+                                              placeholder="Choose a topic..."
+                                              icon={FileText}
+                                          />
+                                      </div>
+                                    )}
+                                    
                                     <button
                                         onClick={(e) => {
                                             e.preventDefault();
-                                            if (programForm.programId && !programForm.selectedPrograms.includes(programForm.programId)) {
-                                                setProgramForm(prev => ({
-                                                    ...prev,
-                                                    selectedPrograms: [...prev.selectedPrograms, prev.programId],
-                                                    programId: ''
-                                                }));
+                                            const selectedProg = programs.find(p => p._id === programForm.programId);
+                                            if (selectedProg?.topics?.length > 0 && !programForm.topicId) {
+                                                addToast({ title: 'Topic Required', message: 'Please select a topic for this program', type: 'warning' });
+                                                return;
+                                            }
+                                            
+                                            if (programForm.programId && (!programForm.selectedPrograms.includes(programForm.programId) || (programForm.selectedPrograms.includes(programForm.programId) && programForm.selectedTopics[programForm.programId] !== programForm.topicId))) {
+                                                setProgramForm(prev => {
+                                                    const newSelectedTopics = { ...prev.selectedTopics };
+                                                    if (prev.topicId) {
+                                                        newSelectedTopics[prev.programId] = prev.topicId;
+                                                    }
+                                                    const newPrograms = prev.selectedPrograms.includes(prev.programId) 
+                                                        ? prev.selectedPrograms 
+                                                        : [...prev.selectedPrograms, prev.programId];
+                                                        
+                                                    return {
+                                                        ...prev,
+                                                        selectedPrograms: newPrograms,
+                                                        selectedTopics: newSelectedTopics,
+                                                        programId: '',
+                                                        topicId: ''
+                                                    }
+                                                });
                                             }
                                         }}
                                         disabled={!programForm.programId}
@@ -1070,15 +1231,37 @@ export default function ParticipantsPage() {
                                     {programForm.selectedPrograms.map(progId => {
                                         const prog = programs.find(p => p._id === progId);
                                         return (
-                                        <div key={progId} className="flex items-center gap-2 bg-purple-500/10 text-purple-200 border border-purple-500/20 px-3 py-1.5 rounded-lg text-sm">
-                                            {prog?.name || 'Unknown Program'}
-                                            <button 
-                                            type="button" 
-                                            onClick={() => setProgramForm(prev => ({ ...prev, selectedPrograms: prev.selectedPrograms.filter(id => id !== progId) }))}
-                                            className="hover:text-white"
-                                            >
-                                            <X size={14} />
-                                            </button>
+                                        <div key={progId} className="flex flex-col gap-1 bg-purple-500/10 text-purple-200 border border-purple-500/20 px-3 py-1.5 rounded-lg text-sm max-w-full">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="font-semibold truncate">{prog?.name || 'Unknown Program'}</span>
+                                                <button 
+                                                type="button" 
+                                                onClick={() => setProgramForm(prev => {
+                                                    const newTopics = { ...prev.selectedTopics };
+                                                    delete newTopics[progId];
+                                                    return {
+                                                        ...prev, 
+                                                        selectedPrograms: prev.selectedPrograms.filter(id => id !== progId),
+                                                        selectedTopics: newTopics
+                                                    }
+                                                })}
+                                                className="hover:text-white shrink-0"
+                                                >
+                                                <X size={14} />
+                                                </button>
+                                            </div>
+                                            {prog?.language && (
+                                                <span className="text-xs text-purple-300/90 flex items-center gap-1 truncate">
+                                                    <Globe size={10} className="shrink-0" /> 
+                                                    {prog.language}
+                                                </span>
+                                            )}
+                                            {programForm.selectedTopics[progId] && (
+                                                <span className="text-xs text-purple-400/80 italic flex items-center gap-1 truncate">
+                                                    <FileText size={10} className="shrink-0" /> 
+                                                    {prog?.topics?.find((t: any) => t._id === programForm.selectedTopics[progId])?.title || 'Unknown Topic'}
+                                                </span>
+                                            )}
                                         </div>
                                         );
                                     })}
@@ -1192,22 +1375,39 @@ export default function ParticipantsPage() {
                                                 await apiRequest('/conversation-pairs', 'POST', {
                                                     programId: selectedModalProgramOb._id,
                                                     participantIds: [viewParticipant._id, ...selectedPartners.map(p => p._id)],
-                                                    primaryParticipantId: officialChestId
+                                                    primaryParticipantId: officialChestId,
+                                                    topicId: programForm.topicId || undefined
                                                 });
                                             } else {
                                                 const finalProgramsToAdd = [...programForm.selectedPrograms];
                                                 if (programForm.programId && !finalProgramsToAdd.includes(programForm.programId)) {
                                                     finalProgramsToAdd.push(programForm.programId);
                                                 }
+                                                
+                                                const finalSelectedTopicsToAdd = { ...programForm.selectedTopics };
+                                                if (programForm.programId && programForm.topicId && !finalSelectedTopicsToAdd[programForm.programId]) {
+                                                    finalSelectedTopicsToAdd[programForm.programId] = programForm.topicId;
+                                                }
+
                                                 const newPrograms = viewParticipant.programs 
                                                     ? [...viewParticipant.programs.map((p:any) => p._id || p), ...finalProgramsToAdd] 
                                                     : [...finalProgramsToAdd];
 
                                                 const uniquePrograms = Array.from(new Set(newPrograms));
+                                                
+                                                const mergedProgramTopics = [...(viewParticipant.programTopics || [])];
+                                                finalProgramsToAdd.forEach(pid => {
+                                                    if (finalSelectedTopicsToAdd[pid]) {
+                                                        const idx = mergedProgramTopics.findIndex(pt => pt.programId === pid || pt.programId?._id === pid);
+                                                        if (idx !== -1) mergedProgramTopics.splice(idx, 1);
+                                                        mergedProgramTopics.push({ programId: pid, topicId: finalSelectedTopicsToAdd[pid] });
+                                                    }
+                                                });
 
                                                 await apiRequest(`/participants/${viewParticipant._id}`, 'PUT', {
                                                     ...viewParticipant,
                                                     programs: uniquePrograms,
+                                                    programTopics: mergedProgramTopics,
                                                     teamId: viewParticipant.teamId?._id || viewParticipant.teamId,
                                                     groupId: viewParticipant.groupId?._id || viewParticipant.groupId
                                                 });
@@ -1219,7 +1419,7 @@ export default function ParticipantsPage() {
                                             
                                             addToast({ title: 'Success', message: selectedModalProgramOb?.isConversation ? "Group registered and program added!" : "Programs added!", type: 'success' });
                                             setIsAddingProgramMode(false);
-                                            setProgramForm({ language: '', programId: '', selectedPrograms: [] });
+                                            setProgramForm({ language: '', programId: '', topicId: '', selectedPrograms: [], selectedTopics: {} });
                                             setSelectedPartners([]);
                                             setPartnerSearchQ('');
                                             setOfficialChestId('');
@@ -1244,17 +1444,42 @@ export default function ParticipantsPage() {
                             </h4>
                             
                             {viewParticipant.programs?.length > 0 ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                                    {viewParticipant.programs.map((prog: any) => (
-                                        <div key={prog._id || prog} className="bg-[#13111C] p-3 rounded-xl border border-[#2D283E] flex items-center justify-between group hover:border-purple-500/50 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 text-xs font-bold">
-                                                    {prog.language ? prog.language.substring(0,2).toUpperCase() : 'ALL'}
+                                <div className="grid grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar items-start">
+                                    {viewParticipant.programs.map((prog: any) => {
+                                        const fullProgram = programs.find(p => p._id === (prog._id || prog));
+                                        const pt = viewParticipant.programTopics?.find((t: any) => t.programId === (prog._id || prog));
+                                        const topic = fullProgram?.topics?.find((t: any) => t._id === pt?.topicId);
+                                        const isExpanded = expandedProgramId === (prog._id || prog);
+
+                                        return (
+                                            <div 
+                                                key={prog._id || prog} 
+                                                onClick={() => setExpandedProgramId(isExpanded ? null : (prog._id || prog))}
+                                                className="bg-[#13111C] p-3 rounded-xl border border-[#2D283E] flex flex-col group hover:border-purple-500/50 transition-colors cursor-pointer"
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 text-xs font-bold">
+                                                            {prog.language ? prog.language.substring(0,2).toUpperCase() : 'ALL'}
+                                                        </div>
+                                                        <span className="text-gray-200 text-sm font-medium">{prog.name}</span>
+                                                    </div>
+                                                    {!isExpanded && <span className="text-[10px] text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">Tap to view details</span>}
                                                 </div>
-                                                <span className="text-gray-200 text-sm font-medium">{prog.name}</span>
+                                                
+                                                {isExpanded && (
+                                                    <div className="mt-3 pt-3 border-t border-[#2D283E] animate-in fade-in slide-in-from-top-1 duration-200 flex flex-col gap-2">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-500">Selected Topic</span>
+                                                            <span className="text-xs text-gray-300 font-medium text-right max-w-[200px] truncate" title={topic?.title || 'Not available'}>
+                                                                {topic?.title || 'Not available'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="text-center py-8 bg-[#13111C] rounded-2xl border border-dashed border-[#2D283E] text-gray-500">
@@ -1278,7 +1503,7 @@ export default function ParticipantsPage() {
                          <button 
                             onClick={() => {
                                 setIsAddingProgramMode(true);
-                                setProgramForm({ language: '', programId: '', selectedPrograms: [] });
+                                setProgramForm({ language: '', programId: '', topicId: '', selectedPrograms: [], selectedTopics: {} });
                                 setSelectedPartners([]);
                             }}
                             className="px-6 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-lg font-bold shadow-lg shadow-purple-900/20 flex items-center gap-2 transition-all"
@@ -1288,7 +1513,10 @@ export default function ParticipantsPage() {
                     )}
                    
                     <button 
-                        onClick={() => setViewParticipant(null)}
+                        onClick={() => {
+                            setViewParticipant(null);
+                            setExpandedProgramId(null);
+                        }}
                         className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg font-bold transition-colors"
                     >
                         Close

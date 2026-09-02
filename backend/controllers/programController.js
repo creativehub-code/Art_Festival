@@ -74,7 +74,7 @@ const createProgram = async (req, res) => {
     // Explicitly destructure ONLY safe, permitted fields from req.body.
     // Any extra fields sent in the request (e.g., _id, __v, totalScore)
     // are silently ignored and never reach the database.
-    const { name, maxMarks, groupId, status, language, isConversation } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics } = req.body;
 
     const payload = {};
     if (name !== undefined)           payload.name = name;
@@ -83,6 +83,7 @@ const createProgram = async (req, res) => {
     if (status !== undefined)         payload.status = status;
     if (language !== undefined)       payload.language = language;
     if (isConversation !== undefined) payload.isConversation = isConversation;
+    if (topics !== undefined)         payload.topics = topics;
 
     const program = await Program.create(payload);
     res.status(201).json(program);
@@ -99,7 +100,7 @@ const updateProgram = async (req, res) => {
     // Explicitly destructure ONLY safe, permitted fields from req.body.
     // runValidators: true ensures Mongoose schema enums (e.g., language,
     // status) are fully respected, treating the DB as the last line of defence.
-    const { name, maxMarks, groupId, status, language, isConversation } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics } = req.body;
 
     const updateData = {};
     if (name !== undefined)           updateData.name = name;
@@ -108,6 +109,7 @@ const updateProgram = async (req, res) => {
     if (status !== undefined)         updateData.status = status;
     if (language !== undefined)       updateData.language = language;
     if (isConversation !== undefined) updateData.isConversation = isConversation;
+    if (topics !== undefined)         updateData.topics = topics;
 
     const program = await Program.findByIdAndUpdate(id, updateData, {
       new: true,
@@ -217,6 +219,101 @@ const getProgramParticipants = async (req, res) => {
   }
 };
 
+const addTopic = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let { title } = req.body;
+    
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Topic title is required" });
+    }
+    title = title.trim();
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    // Check duplicate
+    const isDuplicate = program.topics.some(
+      (t) => t.title.toLowerCase() === title.toLowerCase()
+    );
+    if (isDuplicate) {
+      return res.status(400).json({ message: "Topic already exists" });
+    }
+
+    program.topics.push({ title });
+    await program.save();
+    res.status(201).json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const updateTopic = async (req, res) => {
+  try {
+    const { id, topicId } = req.params;
+    let { title } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Topic title is required" });
+    }
+    title = title.trim();
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    const topic = program.topics.id(topicId);
+    if (!topic) return res.status(404).json({ message: "Topic not found" });
+
+    // Check duplicate (excluding current topic)
+    const isDuplicate = program.topics.some(
+      (t) => t.title.toLowerCase() === title.toLowerCase() && t._id.toString() !== topicId
+    );
+    if (isDuplicate) {
+      return res.status(400).json({ message: "Topic already exists" });
+    }
+
+    topic.title = title;
+    await program.save();
+    res.json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteTopic = async (req, res) => {
+  try {
+    const { id, topicId } = req.params;
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    const topicIndex = program.topics.findIndex(t => t._id.toString() === topicId);
+    if (topicIndex === -1) {
+      return res.status(404).json({ message: "Topic not found" });
+    }
+
+    // Check if topic is in use by any Participant
+    const Participant = require("../models/Participant");
+    const inUseByParticipant = await Participant.exists({ "programTopics.topicId": topicId });
+    if (inUseByParticipant) {
+      return res.status(400).json({ message: "Cannot delete topic because it is currently assigned to one or more participants." });
+    }
+
+    // Check if topic is in use by any ConversationPair
+    const ConversationPair = require("../models/ConversationPair");
+    const inUseByPair = await ConversationPair.exists({ topicId });
+    if (inUseByPair) {
+      return res.status(400).json({ message: "Cannot delete topic because it is currently assigned to a group/pair." });
+    }
+
+    program.topics.splice(topicIndex, 1);
+    await program.save();
+    res.json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getPrograms,
   createProgram,
@@ -224,5 +321,8 @@ module.exports = {
   deleteProgram,
   getPublicPrograms,
   getProgramParticipants,
+  addTopic,
+  updateTopic,
+  deleteTopic,
 };
 
