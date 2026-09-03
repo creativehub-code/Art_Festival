@@ -16,7 +16,7 @@ import {
   ArcElement
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { usePrograms, useTeams, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
+import { usePrograms, useTeams, useGroups, useParticipants, useLanguages, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import { useToast } from '@/lib/useToast';
 
@@ -45,7 +45,8 @@ export default function AdminDashboard() {
   const [selectedLanguage, setSelectedLanguage] = useState('All');
   const [isProgramsVisible, setIsProgramsVisible] = useState(true);
 
-  const languages = ['All', 'Malayalam', 'Arabic', 'Urdu', 'English'];
+  const { data: dbLanguages = [] } = useLanguages();
+  const languages = ['All', ...dbLanguages.map(l => l.name)];
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {

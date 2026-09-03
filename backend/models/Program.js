@@ -21,8 +21,8 @@ const programSchema = new mongoose.Schema(
     },
     language: {
       type: String,
-      enum: ["Malayalam", "Arabic", "Urdu", "English"],
       required: true,
+      trim: true,
       default: "English",
     },
     topics: [

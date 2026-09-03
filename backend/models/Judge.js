@@ -20,7 +20,7 @@ const judgeSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ["Malayalam", "Arabic", "Urdu", "English"],
+      trim: true,
     },
     password: {
       type: String,

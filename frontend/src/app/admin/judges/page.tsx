@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
 import { Plus, Trash2, Users, X, UserMinus, Edit3, Globe, KeyRound } from 'lucide-react';
-import { usePrograms, useJudgeGroups, useJudges, useInvalidate } from '@/lib/queries';
+import { usePrograms, useJudgeGroups, useJudges, useLanguages, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -12,6 +12,8 @@ export default function JudgeGroupsPage() {
   const { data: programs = [] as any[] } = usePrograms();
   const { data: judgeGroups = [] as any[] } = useJudgeGroups();
   const { data: allJudges = [] as any[] } = useJudges();
+  const { data: dbLanguages = [] as any[] } = useLanguages();
+  const judgeCategories = dbLanguages.map(l => l.name);
   const { invalidateJudgeGroups, invalidateJudges } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
   
@@ -312,7 +314,7 @@ export default function JudgeGroupsPage() {
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {['Malayalam', 'English', 'Urdu', 'Arabic'].map(lang => {
+            {judgeCategories.map(lang => {
               const langJudges = allJudges.filter(j => j.category === lang && j.username);
               if (langJudges.length === 0) return null;
               const langColors: Record<string, string> = {
@@ -471,7 +473,7 @@ export default function JudgeGroupsPage() {
                       className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-purple-500 outline-none transition-all placeholder-gray-600"
                   />
                   <div className="flex flex-wrap gap-2">
-                    {['', 'Malayalam', 'English', 'Urdu', 'Arabic'].map(lang => (
+                    {['', ...judgeCategories].map(lang => (
                       <button
                         key={lang || 'all'}
                         type="button"
@@ -593,7 +595,7 @@ export default function JudgeGroupsPage() {
                         className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-pink-500 outline-none transition-all placeholder-gray-600"
                     />
                     <div className="flex flex-wrap gap-2">
-                      {['', 'Malayalam', 'English', 'Urdu', 'Arabic'].map(lang => (
+                      {['', ...judgeCategories].map(lang => (
                         <button
                           key={lang || 'all'}
                           type="button"
@@ -702,7 +704,7 @@ export default function JudgeGroupsPage() {
                         className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-pink-500 outline-none transition-all placeholder-gray-600"
                     />
                     <div className="flex flex-wrap gap-2">
-                      {['', 'Malayalam', 'English', 'Urdu', 'Arabic'].map(lang => (
+                      {['', ...judgeCategories].map(lang => (
                         <button
                           key={lang || 'all'}
                           type="button"

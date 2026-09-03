@@ -3,6 +3,7 @@ const Program = require("../models/Program");
 const JudgeMark = require("../models/JudgeMark");
 const JudgeGroup = require("../models/JudgeGroup");
 const Participant = require("../models/Participant");
+const Language = require("../models/Language");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -152,6 +153,16 @@ const createProgram = async (req, res) => {
       return res.status(400).json({ message: e.message });
     }
 
+    // Validate language existence
+    if (language) {
+      const langDoc = await Language.findOne({
+        name: { $regex: new RegExp(`^${language.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+      });
+      if (!langDoc) {
+        return res.status(400).json({ message: "Selected language does not exist." });
+      }
+    }
+
     const payload = {};
     if (name !== undefined)           payload.name = name;
     if (maxMarks !== undefined)       payload.maxMarks = maxMarks;
@@ -199,6 +210,16 @@ const updateProgram = async (req, res) => {
       newLanguagePosition = lpRaw !== undefined ? parsePosition(lpRaw) : undefined;
     } catch (e) {
       return res.status(400).json({ message: e.message });
+    }
+
+    // Validate language existence
+    if (language !== undefined && language !== null && language !== "") {
+      const langDoc = await Language.findOne({
+        name: { $regex: new RegExp(`^${language.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+      });
+      if (!langDoc) {
+        return res.status(400).json({ message: "Selected language does not exist." });
+      }
     }
 
     const updateData = {};
@@ -327,11 +348,17 @@ const deleteProgram = async (req, res) => {
 
       const ProgramResult = require("../models/ProgramResult");
       const ConversationPair = require("../models/ConversationPair");
+      const MarkAuditLog = require("../models/MarkAuditLog");
 
-      // 1. Remove the programId from Participant.programs using $pull
+      // 1. Remove the programId from Participant.programs and Participant.programTopics using $pull
       await Participant.updateMany(
         { programs: id },
         { $pull: { programs: id } },
+        { session }
+      );
+      await Participant.updateMany(
+        { "programTopics.programId": id },
+        { $pull: { programTopics: { programId: id } } },
         { session }
       );
 
@@ -350,6 +377,9 @@ const deleteProgram = async (req, res) => {
 
       // 5. Delete all ConversationPair records belonging to the program
       await ConversationPair.deleteMany({ programId: id }, { session });
+      
+      // 6. Delete all MarkAuditLog records belonging to the program
+      await MarkAuditLog.deleteMany({ programId: id }, { session });
     });
 
     res.json({ message: "Program deleted successfully" });
