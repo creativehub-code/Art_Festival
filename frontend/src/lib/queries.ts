@@ -50,6 +50,14 @@ export interface JudgeGroup {
   programs?: string[] | Program[];
 }
 
+export interface Language {
+  _id: string;
+  name: string;
+  position: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // --- QUERIES ---
 
 export const usePrograms = () => {
@@ -69,6 +77,17 @@ export const useGroups = () => {
     queryFn: async () => {
       const data = await apiRequest('/groups');
       return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useLanguages = () => {
+  return useQuery<Language[]>({
+    queryKey: ['languages'],
+    queryFn: async () => {
+      const data = await apiRequest('/languages');
+      return Array.isArray(data) ? data : [];
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -288,6 +307,7 @@ export const useInvalidate = () => {
   const queryClient = useQueryClient();
   return {
     invalidatePrograms: () => queryClient.invalidateQueries({ queryKey: ['programs'] }),
+    invalidateLanguages: () => queryClient.invalidateQueries({ queryKey: ['languages'] }),
     invalidateGroups: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
     invalidateTeams: () => queryClient.invalidateQueries({ queryKey: ['teams'] }),
     invalidateParticipants: () => {

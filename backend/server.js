@@ -9,11 +9,14 @@ const cookieParser = require("cookie-parser");
 const { setCsrfToken, validateCsrf } = require("./middleware/csrfMiddleware");
 
 const connectDB = require("./config/db");
+const seedLanguages = require("./scripts/seedLanguages");
 
 dotenv.config();
 
-// Connect to Database
-connectDB();
+// Connect to Database & seed default languages
+connectDB().then(() => {
+  seedLanguages();
+});
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -110,6 +113,7 @@ app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/setup", authLimiter);
 app.use("/api/participants", writeLimiter);
 app.use("/api/programs", writeLimiter);
+app.use("/api/languages", writeLimiter);
 app.use("/api/marks", writeLimiter);
 
 // Routes
@@ -117,6 +121,7 @@ app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/participants", require("./routes/participantRoutes"));
 app.use("/api/teams", require("./routes/teamRoutes"));
 app.use("/api/groups", require("./routes/groupRoutes"));
+app.use("/api/languages", require("./routes/languageRoutes"));
 app.use("/api/programs", require("./routes/programRoutes"));
 app.use("/api/marks", require("./routes/markRoutes"));
 app.use("/api/judges", require("./routes/judgeRoutes"));

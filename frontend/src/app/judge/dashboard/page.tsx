@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { apiRequest } from '@/lib/api';
 import Link from 'next/link';
-import { ChevronRight, Globe, Layers, Search, Users, Trophy, Shield, ChevronDown, Check, LayoutGrid } from 'lucide-react';
+import { ChevronRight, Globe, Layers, Search, Users, Trophy, Shield, ChevronDown, Check, LayoutGrid, BookOpen } from 'lucide-react';
 
 export default function JudgeDashboard() {
   const [programs, setPrograms] = useState<any[]>([]);
@@ -239,6 +239,11 @@ export default function JudgeDashboard() {
                     {program.groupId && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-500/5 text-indigo-400 border border-indigo-500/10 text-[10px] font-bold uppercase tracking-wider">
                         <Layers size={10} /> {program.groupId.name || 'Group'}
+                      </span>
+                    )}
+                    {program.topics && program.topics.length > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/5 text-purple-400 border border-purple-500/10 text-[10px] font-bold uppercase tracking-wider">
+                        <BookOpen size={10} /> {program.topics.length} {program.topics.length === 1 ? 'Topic' : 'Topics'}
                       </span>
                     )}
                   </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown } from 'lucide-react';
-import { usePrograms, useGroups, useParticipants, useInvalidate } from '@/lib/queries';
+import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -14,6 +14,7 @@ export default function ProgramsPage() {
   const { invalidatePrograms } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loading = loadingPrograms;
   const [selectedGroupFilters, setSelectedGroupFilters] = useState<Record<string, string>>({});
@@ -38,24 +39,28 @@ export default function ProgramsPage() {
   };
 
   const confirmDeleteProgram = async () => {
-    if (!deleteConfirmId) return;
+    if (!deleteConfirmId || isDeleting) return;
+    setIsDeleting(true);
     try {
       await apiRequest(`/programs/${deleteConfirmId}`, 'DELETE');
       invalidatePrograms();
       addToast({ title: 'Program Deleted', message: 'Program deleted successfully.', type: 'info' });
+      setDeleteConfirmId(null);
     } catch (e: any) { 
       addToast({ title: 'Delete Failed', message: e.message || 'Failed to delete program', type: 'error' }); 
     } finally {
-      setDeleteConfirmId(null);
+      setIsDeleting(false);
     }
   };
+
 
   const openCreateModal = (language: string = '') => {
     setModalDefaultLanguage(language);
     setIsCreateModalOpen(true);
   };
 
-  const languages = ['Malayalam', 'Arabic', 'Urdu', 'English'];
+  const { data: dbLanguages = [] } = useLanguages();
+  const languages = dbLanguages.map(l => l.name);
 
   // Expandable Row State
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
@@ -84,30 +89,47 @@ export default function ProgramsPage() {
     });
   };
 
-  if (loading && programs.length === 0) {
-      return <div className="p-10 text-white">Loading programs...</div>;
-  }
-
   return (
     <div className="space-y-12 pb-20">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* Top Header — Always visible across loading, empty, desktop & mobile states */}
+      <div className="flex flex-row justify-between items-start sm:items-center gap-4 flex-wrap sm:flex-nowrap">
         <div>
-            <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Manage Programs</h2>
-            <p className="text-gray-400">Create, organize and track competition items.</p>
+            <h2 className="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Manage Programs</h2>
+            <p className="text-gray-400 text-xs sm:text-sm">Create, organize and track competition items.</p>
         </div>
         <button 
           onClick={() => openCreateModal()} 
-          className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-900/20 transition-all"
+          className="bg-purple-600 hover:bg-purple-700 active:scale-95 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-900/30 transition-all text-sm sm:text-base border border-purple-500/30 shrink-0"
         >
-          <Plus size={20} />
-          Create New Program
+          <Plus size={18} className="shrink-0" />
+          <span>Create Program</span>
         </button>
       </div>
-      
-      {/* List Sections */}
-      <div className="space-y-12">
-        {languages.map(language => {
-            const langPrograms = getProgramsByLanguage(language);
+
+      {/* Loading state banner below header */}
+      {loading && programs.length === 0 ? (
+        <div className="p-12 text-center text-purple-300 bg-[#13111C]/50 rounded-2xl border border-white/5 font-semibold animate-pulse">
+          Loading programs...
+        </div>
+      ) : dbLanguages.length === 0 ? (
+        /* Empty State if no languages exist */
+        <div className="p-12 text-center text-gray-400 bg-[#13111C]/50 rounded-2xl border border-dashed border-gray-800 space-y-4">
+          <FileText size={32} className="mx-auto text-gray-600" />
+          <p className="text-lg font-bold text-white">No Program Sections Available</p>
+          <p className="text-sm text-gray-400 max-w-md mx-auto">Get started by creating your first program item.</p>
+          <button
+            onClick={() => openCreateModal()}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-xl font-bold inline-flex items-center gap-2 transition-all shadow-lg shadow-purple-900/20"
+          >
+            <Plus size={18} />
+            Create Program
+          </button>
+        </div>
+      ) : (
+        /* List Sections */
+        <div className="space-y-12">
+          {languages.map(language => {
+              const langPrograms = getProgramsByLanguage(language);
 
             return (
                 <div key={language}>
@@ -379,6 +401,7 @@ export default function ProgramsPage() {
             )
         })}
       </div>
+      )}
 
       {/* Create Modal */}
       <CreateProgramModal 
@@ -406,6 +429,7 @@ export default function ProgramsPage() {
         title="Delete Program"
         message="Are you sure you want to delete this program? This action cannot be undone."
         confirmText="Delete"
+        isLoading={isDeleting}
         onConfirm={confirmDeleteProgram}
         onCancel={() => setDeleteConfirmId(null)}
       />
@@ -426,9 +450,9 @@ function PositionInput({ label, sublabel, value, onChange, id }: {
     id: string;
 }) {
     return (
-        <div className="space-y-1">
-            <label htmlFor={id} className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Hash size={11} className="text-purple-400" />{label}
+        <div className="space-y-1.5">
+            <label htmlFor={id} className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Hash size={13} className="text-purple-400" />{label}
             </label>
             <input
                 id={id}
@@ -438,12 +462,224 @@ function PositionInput({ label, sublabel, value, onChange, id }: {
                 placeholder="—"
                 value={value}
                 onChange={e => onChange(e.target.value)}
-                className="w-full p-2.5 sm:p-3 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600 text-sm"
+                className="w-full p-3.5 rounded-2xl bg-[#110E1B] border border-[#2A243A] text-white focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600 text-sm font-medium"
             />
-            <p className="text-[10px] text-gray-500">{sublabel}</p>
+            <p className="text-xs text-gray-400">{sublabel}</p>
         </div>
     );
 }
+
+// ---------------------------------------------------------------------------
+// New Language Modal
+// ---------------------------------------------------------------------------
+function NewLanguageModal({
+    isOpen,
+    onClose,
+    onLanguageCreated,
+    addToast,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    onLanguageCreated: (name: string) => void;
+    addToast: any;
+}) {
+    const [name, setName] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    // Language delete state
+    const [deleteLanguageId, setDeleteLanguageId] = useState<string | null>(null);
+    const [isDeletingLanguage, setIsDeletingLanguage] = useState(false);
+
+    const { data: dbLanguages = [] } = useLanguages();
+    const { invalidateLanguages } = useInvalidate();
+
+    useEffect(() => {
+        if (isOpen) {
+            setName('');
+            setDeleteLanguageId(null);
+        }
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    // ── CREATE ──────────────────────────────────────────────────────────────
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const trimmed = name.trim();
+        if (!trimmed) {
+            addToast({ title: 'Validation Error', message: 'Language name is required.', type: 'error' });
+            return;
+        }
+
+        const isDuplicate = dbLanguages.some(
+            (l: any) => l?.name && String(l.name).trim().toLowerCase() === trimmed.toLowerCase()
+        );
+        if (isDuplicate) {
+            addToast({ title: 'Validation Error', message: `Language '${trimmed}' already exists.`, type: 'error' });
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const res = await apiRequest('/languages', 'POST', { name: trimmed });
+            invalidateLanguages();
+            const createdName = res?.name || trimmed;
+            addToast({ title: 'Language Added', message: `${createdName} has been added successfully.`, type: 'success' });
+            onLanguageCreated(createdName);
+            onClose();
+        } catch (e: any) {
+            addToast({ title: 'Creation Failed', message: e.message || 'Failed to create language', type: 'error' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // ── DELETE ──────────────────────────────────────────────────────────────
+    const confirmDeleteLanguage = async () => {
+        if (!deleteLanguageId || isDeletingLanguage) return;
+        setIsDeletingLanguage(true);
+        try {
+            await apiRequest(`/languages/${deleteLanguageId}`, 'DELETE');
+            invalidateLanguages();
+            addToast({ title: 'Language Deleted', message: 'Language deleted successfully.', type: 'info' });
+            setDeleteLanguageId(null);
+        } catch (e: any) {
+            // Keep modal open on failure so admin can retry or cancel.
+            // Show exact backend message (e.g. "cannot delete because used by programs or judges").
+            addToast({ title: 'Delete Failed', message: e.message || 'Failed to delete language.', type: 'error' });
+        } finally {
+            setIsDeletingLanguage(false);
+        }
+    };
+
+    // Name of the language being targeted for deletion (for the confirm message)
+    const deletingLangName = deleteLanguageId
+        ? (dbLanguages.find((l: any) => l._id === deleteLanguageId) as any)?.name ?? 'this language'
+        : 'this language';
+
+    return (
+        <>
+            {/* ── Delete Language ConfirmModal (z-[70] — above the language modal z-[60]) ── */}
+            <ConfirmModal
+                isOpen={!!deleteLanguageId}
+                title="Delete Language"
+                message={`Are you sure you want to delete "${deletingLangName}"? A language can only be deleted if it is not currently used by any program or judge.`}
+                confirmText="Delete"
+                variant="danger"
+                isLoading={isDeletingLanguage}
+                onConfirm={confirmDeleteLanguage}
+                onCancel={() => setDeleteLanguageId(null)}
+            />
+
+            <div
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                onClick={onClose}
+            >
+                <div
+                    className="relative bg-[#1E1B2E] border border-[#2D283E] rounded-3xl shadow-2xl w-full max-w-md animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col"
+                    style={{ maxHeight: 'calc(100vh - 3rem)' }}
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* ── Header ── */}
+                    <div className="flex justify-between items-center px-6 pt-6 pb-4 border-b border-[#2D283E] flex-shrink-0">
+                        <div>
+                            <h3 className="text-xl font-bold text-white">Manage Languages</h3>
+                            <p className="text-gray-400 text-xs mt-0.5">Add or remove competition languages</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={loading}
+                            className="text-gray-500 hover:text-white bg-gray-800/50 p-2 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+
+                    {/* ── Scrollable body ── */}
+                    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+                        {/* ── Create New Language form ── */}
+                        <div className="space-y-3">
+                            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Plus size={12} className="text-purple-400" /> Add New Language
+                            </p>
+                            <form onSubmit={handleSubmit} className="flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Hindi, Tamil, Kannada"
+                                    value={name}
+                                    onChange={e => setName(e.target.value)}
+                                    disabled={loading}
+                                    className="flex-1 px-3 py-2.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 text-sm disabled:opacity-50"
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="px-4 py-2.5 rounded-xl text-sm font-bold bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 transition-all shadow-lg shadow-purple-900/20 whitespace-nowrap"
+                                >
+                                    {loading ? 'Adding...' : 'Add'}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* ── Existing Languages list ── */}
+                        {dbLanguages.length > 0 && (
+                            <div className="space-y-2">
+                                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Globe size={12} className="text-blue-400" /> Existing Languages
+                                    <span className="ml-auto text-gray-600 font-mono">{dbLanguages.length}</span>
+                                </p>
+                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                    {(dbLanguages as any[]).map((lang: any) => (
+                                        <div
+                                            key={lang._id}
+                                            className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-[#13111C] border border-[#2A243A] hover:border-[#3A3452] transition-colors group"
+                                        >
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <Globe size={13} className="text-blue-400 flex-shrink-0" />
+                                                <span className="text-sm font-semibold text-gray-200 truncate">{lang.name}</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setDeleteLanguageId(lang._id)}
+                                                disabled={isDeletingLanguage}
+                                                title={`Delete ${lang.name}`}
+                                                className="flex-shrink-0 ml-3 p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                            >
+                                                <Trash2 size={13} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {dbLanguages.length === 0 && (
+                            <div className="text-center py-6 text-gray-500 text-sm">
+                                No languages yet. Add one above.
+                            </div>
+                        )}
+
+                    </div>
+
+                    {/* ── Footer ── */}
+                    <div className="flex justify-end px-6 py-4 border-t border-[#2D283E] flex-shrink-0">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-5 py-2 rounded-xl text-sm font-semibold text-gray-300 hover:bg-gray-800 transition-colors border border-[#2D283E]"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}
+
 
 // ---------------------------------------------------------------------------
 // Create Program Modal
@@ -456,11 +692,14 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
     refreshPrograms: () => void;
     addToast: any;
 }) {
+    const { data: dbLanguages = [] } = useLanguages();
+    const [isNewLangModalOpen, setIsNewLangModalOpen] = useState(false);
+
     const [form, setForm] = useState({
         name: '',
         groupId: '',
         status: 'upcoming',
-        language: defaultLanguage || 'English',
+        language: defaultLanguage || (dbLanguages[0]?.name || 'English'),
         isConversation: false,
         globalPosition: '',
         languagePosition: '',
@@ -476,13 +715,33 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
         }
     }, [isOpen]);
 
+    // Initialize form when modal opens
     useEffect(() => {
-        if (defaultLanguage) {
-            setForm(prev => ({ ...prev, language: defaultLanguage }));
+        if (isOpen) {
+            setForm(prev => ({
+                ...prev,
+                name: '',
+                groupId: prev.groupId || (groups[0]?._id || ''),
+                status: 'upcoming',
+                language: defaultLanguage || (dbLanguages[0]?.name || 'English'),
+                isConversation: false,
+                globalPosition: '',
+                languagePosition: '',
+            }));
         }
-    }, [defaultLanguage]);
+    }, [isOpen]);
 
-    const languages = ['Malayalam', 'Arabic', 'Urdu', 'English'];
+    // Fallback if dbLanguages loads after modal opens and language is unset
+    useEffect(() => {
+        if (isOpen && dbLanguages.length > 0 && !form.language) {
+            setForm(prev => ({ ...prev, language: dbLanguages[0].name }));
+        }
+    }, [isOpen, dbLanguages]);
+
+    const selectorLanguages = [...dbLanguages];
+    if (form.language && !selectorLanguages.some(l => l.name === form.language)) {
+        selectorLanguages.push({ _id: 'temp-' + form.language, name: form.language, position: 999 });
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -518,187 +777,216 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
     if (!isOpen) return null;
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200"
-            onClick={onClose}
-        >
-            {/* Modal shell: wider max-w-2xl and responsive vertical layout */}
+        <>
+            <NewLanguageModal
+                isOpen={isNewLangModalOpen}
+                onClose={() => setIsNewLangModalOpen(false)}
+                onLanguageCreated={(newLang) => setForm(prev => ({ ...prev, language: newLang }))}
+                addToast={addToast}
+            />
             <div
-                className="relative bg-[#1E1B2E] border border-[#2D283E] rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col animate-in zoom-in-95 duration-200"
-                style={{ maxHeight: 'calc(100vh - 2rem)' }}
-                onClick={e => e.stopPropagation()}
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-200"
+                onClick={onClose}
             >
-                {/* Decorative glow */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-purple-900/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none z-0" />
-
-                {/* ── HEADER (never scrolls) ── */}
-                <div className="relative z-10 flex-shrink-0 flex justify-between items-center px-6 py-4 sm:px-8 border-b border-[#2D283E] bg-[#13111C]/60 rounded-t-3xl">
-                    <div>
-                        <h3 className="text-lg sm:text-xl font-bold text-white leading-tight">Create Program</h3>
-                        <p className="text-gray-400 text-xs sm:text-sm mt-0.5">Add a new competition item to the list.</p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        aria-label="Close dialog"
-                        className="flex-shrink-0 ml-4 text-gray-500 hover:text-white transition-colors bg-gray-800/50 p-2 rounded-lg hover:bg-gray-700"
-                    >
-                        <X size={18} />
-                    </button>
-                </div>
-
-                {/* ── CONTENT AREA ── */}
-                <form
-                    onSubmit={handleSubmit}
-                    className="relative z-10 flex flex-col flex-1 min-h-0"
+                {/* Modal shell — wide, breathable, no-scroll */}
+                <div
+                    className="relative bg-[#151224] border border-[#262035] rounded-[28px] shadow-2xl w-full max-w-3xl animate-in zoom-in-95 duration-200 overflow-hidden"
+                    onClick={e => e.stopPropagation()}
                 >
-                    <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 py-4 sm:px-8 sm:py-5 space-y-4">
+                    {/* Decorative glow */}
+                    <div className="absolute top-0 right-0 w-72 h-72 bg-purple-900/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none z-0" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-900/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none z-0" />
 
-                        {/* Program Name */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <FileText size={13} className="text-purple-400" /> Program Name
-                            </label>
-                            <input 
-                                id="program-name-input"
-                                placeholder="e.g. Speech, Song, Quiz"
-                                value={form.name}
-                                onChange={e => setForm({...form, name: e.target.value})} 
-                                className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600 text-sm"
-                                autoFocus
-                                required
-                            />
+                    {/* ── HEADER ── */}
+                    <div className="relative z-10 flex justify-between items-center px-8 py-4 border-b border-[#262035] bg-[#141120]">
+                        <div>
+                            <h3 className="text-lg font-extrabold text-white tracking-tight leading-tight">Create Program</h3>
+                            <p className="text-gray-400 text-sm mt-0.5 font-medium">Add a new competition item to the list.</p>
                         </div>
-
-                        {/* Language + Group */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Globe size={13} className="text-blue-400" /> Language
-                                </label>
-                                <select
-                                    value={form.language}
-                                    onChange={e => setForm({...form, language: e.target.value})}
-                                    className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
-                                >
-                                    {languages.map(lang => <option key={lang} value={lang}>{lang}</option>)}
-                                </select>
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Layers size={13} className="text-green-400" /> Group
-                                </label>
-                                <select
-                                    value={form.groupId}
-                                    onChange={e => setForm({...form, groupId: e.target.value})}
-                                    className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
-                                    required
-                                >
-                                    <option value="">Select Group</option>
-                                    {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Status */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {['upcoming', 'ongoing', 'completed'].map(status => (
-                                    <button
-                                        key={status}
-                                        type="button"
-                                        onClick={() => setForm({...form, status})}
-                                        className={`p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm capitalize font-bold transition-all ${
-                                            form.status === status 
-                                            ? 'bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-900/20' 
-                                            : 'bg-[#13111C] border-[#2D283E] text-gray-400 hover:border-gray-600'
-                                        }`}
-                                    >
-                                        {status}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Group Program toggle */}
-                        <label className="flex items-center gap-3 p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] hover:border-indigo-500/30 transition-all group">
-                            <div className={`w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
-                                form.isConversation ? 'bg-indigo-600 border-indigo-500' : 'border-gray-600 group-hover:border-indigo-400'
-                            }`}>
-                                {form.isConversation && <CheckCircle size={12} className="text-white" />}
-                            </div>
-                            <input type="checkbox" checked={form.isConversation} onChange={e => setForm({...form, isConversation: e.target.checked})} className="hidden" />
-                            <div className="flex-1 min-w-0">
-                                <p className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
-                                    <Users size={14} className="text-indigo-400" /> Group Program
-                                </p>
-                                <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">Requires multiple participants (same team &amp; group) registered as a group</p>
-                            </div>
-                        </label>
-
-                        {/* Program Order */}
-                        <div className="p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-[#2D283E] space-y-2.5">
-                            <div className="flex items-center gap-2">
-                                <ArrowUpDown size={13} className="text-purple-400" />
-                                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Program Order</span>
-                                <span className="text-[10px] text-gray-500 ml-auto">Optional</span>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <PositionInput
-                                    id="create-global-pos"
-                                    label="Global Position"
-                                    sublabel="Order among ALL programs"
-                                    value={form.globalPosition}
-                                    onChange={v => setForm({...form, globalPosition: v})}
-                                />
-                                <PositionInput
-                                    id="create-lang-pos"
-                                    label={`${form.language} Position`}
-                                    sublabel={`Order within ${form.language} programs`}
-                                    value={form.languagePosition}
-                                    onChange={v => setForm({...form, languagePosition: v})}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Create another toggle */}
-                        <label className="flex items-center gap-3 p-2.5 sm:p-3 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] transition-colors group">
-                            <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${createMultiple ? 'bg-purple-600 border-purple-600' : 'border-gray-600 group-hover:border-purple-400'}`}>
-                                {createMultiple && <CheckCircle size={10} className="text-white" />}
-                            </div>
-                            <input type="checkbox" checked={createMultiple} onChange={e => setCreateMultiple(e.target.checked)} className="hidden" />
-                            <span className="text-xs sm:text-sm text-gray-300 font-medium">Create another after submission</span>
-                        </label>
-
-                    </div>{/* end content */}
-
-                    {/* ── FOOTER (never scrolls) ── */}
-                    <div className="flex-shrink-0 px-6 py-3.5 sm:px-8 border-t border-[#2D283E] bg-[#13111C]/40 rounded-b-3xl flex gap-3">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="flex-1 px-5 py-3 rounded-xl border border-gray-700 text-gray-300 text-xs sm:text-sm font-bold hover:bg-gray-800 hover:text-white transition-colors"
+                            aria-label="Close dialog"
+                            className="flex-shrink-0 ml-4 text-gray-400 hover:text-white transition-colors bg-[#221D33] hover:bg-[#2C2642] p-2 rounded-xl border border-[#332C4A]"
                         >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="flex-[2] px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
-                        >
-                            {loading ? 'Creating...' : 'Create Program'}
+                            <X size={18} />
                         </button>
                     </div>
-                </form>
+
+                    {/* ── FORM — block layout, no scroll ── */}
+                    <form onSubmit={handleSubmit} className="relative z-10">
+                        <div className="px-8 py-6 space-y-5 bg-[#151224]">
+
+                            {/* Row 1: Program Name — full width */}
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                                    <FileText size={14} className="text-purple-400" /> PROGRAM NAME
+                                </label>
+                                <input
+                                    id="program-name-input"
+                                    placeholder="e.g. Speech, Song, Quiz"
+                                    value={form.name}
+                                    onChange={e => setForm({...form, name: e.target.value})}
+                                    className="w-full px-4 py-3 rounded-2xl bg-[#110E1B] border-2 border-[#A855F7] text-white focus:outline-none focus:border-purple-400 transition-all placeholder:text-gray-500 text-sm font-medium shadow-[0_0_20px_rgba(168,85,247,0.12)]"
+                                    autoFocus
+                                    required
+                                />
+                            </div>
+
+                            {/* Row 2: Language + Group — side by side */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                                            <Globe size={14} className="text-blue-400" /> LANGUAGE
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsNewLangModalOpen(true)}
+                                            className="text-xs font-bold text-[#D846EF] hover:text-[#E866FF] flex items-center gap-1 transition-colors"
+                                        >
+                                            <Plus size={13} /> Add New Language
+                                        </button>
+                                    </div>
+                                    <select
+                                        value={form.language}
+                                        onChange={e => setForm({...form, language: e.target.value})}
+                                        className="w-full px-4 py-3 rounded-2xl bg-[#110E1B] border border-[#2A243A] text-white font-semibold focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm cursor-pointer"
+                                    >
+                                        {selectorLanguages.map(lang => <option key={lang._id} value={lang.name}>{lang.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                                        <Layers size={14} className="text-emerald-400" /> GROUP
+                                    </label>
+                                    <select
+                                        value={form.groupId}
+                                        onChange={e => setForm({...form, groupId: e.target.value})}
+                                        className="w-full px-4 py-3 rounded-2xl bg-[#110E1B] border border-[#2A243A] text-white font-semibold focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm cursor-pointer uppercase"
+                                        required
+                                    >
+                                        <option value="">Select Group</option>
+                                        {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Row 3: Status */}
+                            <div className="space-y-2">
+                                <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block">STATUS</label>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {['upcoming', 'ongoing', 'completed'].map(status => (
+                                        <button
+                                            key={status}
+                                            type="button"
+                                            onClick={() => setForm({...form, status})}
+                                            className={`py-3 px-4 rounded-2xl border text-sm capitalize font-bold transition-all ${
+                                                form.status === status
+                                                ? 'bg-[#A855F7] border-[#A855F7] text-white shadow-lg shadow-purple-600/25'
+                                                : 'bg-[#110E1B] border-[#2A243A] text-gray-300 hover:border-gray-600'
+                                            }`}
+                                        >
+                                            {status}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Row 4: Group Program toggle + Program Order — side by side */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                {/* Group Program toggle */}
+                                <label className="flex items-start gap-3.5 p-4 rounded-2xl bg-[#110E1B] border border-[#2A243A] cursor-pointer hover:border-indigo-500/40 transition-all group">
+                                    <div className={`mt-0.5 w-5 h-5 rounded-md border flex-shrink-0 flex items-center justify-center transition-colors ${
+                                        form.isConversation ? 'bg-purple-600 border-purple-500' : 'border-[#3C3452] bg-transparent group-hover:border-purple-400'
+                                    }`}>
+                                        {form.isConversation && <CheckCircle size={12} className="text-white" />}
+                                    </div>
+                                    <input type="checkbox" checked={form.isConversation} onChange={e => setForm({...form, isConversation: e.target.checked})} className="hidden" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-white flex items-center gap-2">
+                                            <Users size={14} className="text-indigo-400" /> Group Program
+                                        </p>
+                                        <p className="text-xs text-gray-400 mt-1 leading-relaxed">Requires multiple participants registered as a group</p>
+                                    </div>
+                                </label>
+
+                                {/* Program Order */}
+                                <div className="p-4 rounded-2xl bg-[#110E1B] border border-[#2A243A] space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        <ArrowUpDown size={13} className="text-purple-400" />
+                                        <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">PROGRAM ORDER</span>
+                                        <span className="text-xs text-gray-500 font-medium ml-auto">Optional</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <label htmlFor="create-global-pos" className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                                <Hash size={10} className="text-purple-400" /> GLOBAL
+                                            </label>
+                                            <input
+                                                id="create-global-pos"
+                                                type="number" min="1" step="1" placeholder="—"
+                                                value={form.globalPosition}
+                                                onChange={e => setForm({...form, globalPosition: e.target.value})}
+                                                className="w-full px-3 py-2 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600 text-sm"
+                                            />
+                                            <p className="text-[10px] text-gray-500">Order among all programs</p>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label htmlFor="create-lang-pos" className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                                <Hash size={10} className="text-purple-400" /> {form.language.substring(0,8).toUpperCase()}
+                                            </label>
+                                            <input
+                                                id="create-lang-pos"
+                                                type="number" min="1" step="1" placeholder="—"
+                                                value={form.languagePosition}
+                                                onChange={e => setForm({...form, languagePosition: e.target.value})}
+                                                className="w-full px-3 py-2 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600 text-sm"
+                                            />
+                                            <p className="text-[10px] text-gray-500">Within {form.language}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Row 5: Create another toggle */}
+                            <label className="flex items-center gap-3.5 p-4 rounded-2xl bg-[#110E1B] border border-[#2A243A] cursor-pointer hover:border-purple-500/40 transition-all group">
+                                <div className={`w-5 h-5 rounded-md border flex-shrink-0 flex items-center justify-center transition-colors ${createMultiple ? 'bg-purple-600 border-purple-500' : 'border-[#3C3452] bg-transparent group-hover:border-purple-400'}`}>
+                                    {createMultiple && <CheckCircle size={12} className="text-white" />}
+                                </div>
+                                <input type="checkbox" checked={createMultiple} onChange={e => setCreateMultiple(e.target.checked)} className="hidden" />
+                                <span className="text-sm text-gray-200 font-bold">Create another after submission</span>
+                            </label>
+
+                        </div>
+
+                        {/* ── FOOTER ── */}
+                        <div className="px-8 py-4 border-t border-[#262035] bg-[#141120] flex gap-4">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 py-3 px-6 rounded-2xl border border-[#312B48] bg-[#1A1628] hover:bg-[#221D33] text-white font-bold text-sm transition-colors text-center"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="flex-[1.8] py-3 px-6 rounded-2xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-bold text-sm shadow-lg shadow-purple-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 text-center"
+                            >
+                                {loading ? 'Creating...' : 'Create Program'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
-        </div>
-    );
+        </>);
 }
 
 // ---------------------------------------------------------------------------
 // Edit Program Modal
 // ---------------------------------------------------------------------------
+
 function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast }: {
     program: any;
     groups: any[];
@@ -716,7 +1004,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
         languagePosition: program.languagePosition != null ? String(program.languagePosition) : '',
     });
     const [loading, setLoading] = useState(false);
-    const languages = ['Malayalam', 'Arabic', 'Urdu', 'English'];
+    const { data: dbLanguages = [] } = useLanguages();
 
     // Body scroll lock
     useEffect(() => {
@@ -810,7 +1098,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                                     onChange={e => setForm({...form, language: e.target.value})}
                                     className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm"
                                 >
-                                    {languages.map(lang => <option key={lang} value={lang}>{lang}</option>)}
+                                    {dbLanguages.map(lang => <option key={lang._id} value={lang.name}>{lang.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-1.5">
