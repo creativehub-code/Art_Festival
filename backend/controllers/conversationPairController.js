@@ -150,8 +150,8 @@ const getPairsByProgram = async (req, res) => {
   try {
     const { programId } = req.params;
     const pairs = await ConversationPair.find({ programId })
-      .populate("participants", "name chestNumber")
-      .populate("primaryParticipantId", "name chestNumber")
+      .populate("participants", "name chestNumber programTopics")
+      .populate("primaryParticipantId", "name chestNumber programTopics")
       .sort({ createdAt: 1 });
     res.json(pairs);
   } catch (error) {

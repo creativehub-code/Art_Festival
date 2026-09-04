@@ -30,28 +30,61 @@ const submitMark = async (req, res) => {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const program = await Program.findById(programId).select("name language maxMarks");
+    const program = await Program.findById(programId).select("name language maxMarks criteria criteriaEnabled");
     if (!program) {
       return res.status(404).json({ message: "Program not found" });
     }
 
-    if (marksGiven === undefined || marksGiven === null) {
-      return res.status(400).json({ message: "Marks must be provided." });
-    }
-    
-    if (typeof marksGiven !== "number" && typeof marksGiven !== "string") {
-      return res.status(400).json({ message: "Invalid marks format. Must be a number." });
-    }
-    
-    if (typeof marksGiven === "string" && marksGiven.trim() === "") {
-      return res.status(400).json({ message: "Marks cannot be empty." });
-    }
+    let marks = 0;
+    let formattedCriteriaMarks = [];
 
-    const marks = Number(marksGiven);
-    if (isNaN(marks) || marks < 0 || marks > program.maxMarks) {
-      return res.status(400).json({ 
-        message: `Marks must be between 0 and ${program.maxMarks}` 
-      });
+    const hasCriteria = Boolean(program.criteriaEnabled && program.criteria && program.criteria.length > 0);
+
+    if (hasCriteria) {
+      const { criteriaMarks } = req.body;
+      if (!criteriaMarks || !Array.isArray(criteriaMarks)) {
+        return res.status(400).json({ message: "Detailed criteria marks are required for this program." });
+      }
+
+      let calculatedTotal = 0;
+      for (const progCrit of program.criteria) {
+        const userCritMark = criteriaMarks.find(
+          cm => cm.criterionId && cm.criterionId.toString() === progCrit._id.toString()
+        );
+        if (!userCritMark || userCritMark.marksGiven === undefined || userCritMark.marksGiven === null) {
+          return res.status(400).json({ message: `Criteria mark for '${progCrit.title}' is required.` });
+        }
+        const cmVal = Number(userCritMark.marksGiven);
+        if (isNaN(cmVal) || cmVal < 0 || cmVal > progCrit.maxMarks) {
+          return res.status(400).json({ message: `Criteria mark for '${progCrit.title}' must be between 0 and ${progCrit.maxMarks}` });
+        }
+        formattedCriteriaMarks.push({
+          criterionId: progCrit._id,
+          title: progCrit.title,
+          marksGiven: cmVal,
+        });
+        calculatedTotal += cmVal;
+      }
+      marks = calculatedTotal;
+    } else {
+      if (marksGiven === undefined || marksGiven === null) {
+        return res.status(400).json({ message: "Marks must be provided." });
+      }
+      
+      if (typeof marksGiven !== "number" && typeof marksGiven !== "string") {
+        return res.status(400).json({ message: "Invalid marks format. Must be a number." });
+      }
+      
+      if (typeof marksGiven === "string" && marksGiven.trim() === "") {
+        return res.status(400).json({ message: "Marks cannot be empty." });
+      }
+
+      marks = Number(marksGiven);
+      if (isNaN(marks) || marks < 0 || marks > program.maxMarks) {
+        return res.status(400).json({ 
+          message: `Marks must be between 0 and ${program.maxMarks}` 
+        });
+      }
     }
 
     const participant = await Participant.findById(participantId);
@@ -86,12 +119,16 @@ const submitMark = async (req, res) => {
     // during concurrent race conditions. Second submissions are rejected entirely.
     let markEntry;
     try {
-      markEntry = await JudgeMark.create({
+      const createData = {
         judgeId,
         programId,
         participantId,
         marksGiven: marks,
-      });
+      };
+      if (formattedCriteriaMarks.length > 0) {
+        createData.criteriaMarks = formattedCriteriaMarks;
+      }
+      markEntry = await JudgeMark.create(createData);
     } catch (dbError) {
       if (dbError.code === 11000) {
         return res.status(409).json({
@@ -137,10 +174,15 @@ const submitMark = async (req, res) => {
         id => id.toString() !== participantId.toString()
       );
       
+      const mirrorUpdate = { marksGiven: marks, status: "pending" };
+      if (formattedCriteriaMarks.length > 0) {
+        mirrorUpdate.criteriaMarks = formattedCriteriaMarks;
+      }
+
       const mirroringPromises = otherMemberIds.map(memberId => 
         JudgeMark.findOneAndUpdate(
           { judgeId, programId, participantId: memberId },
-          { marksGiven: marks, status: "pending" },
+          mirrorUpdate,
           { upsert: true, new: true }
         )
       );
@@ -177,7 +219,7 @@ const submitBatchMarks = async (req, res) => {
       return res.status(400).json({ message: "marks array must be provided and cannot be empty." });
     }
 
-    const program = await Program.findById(programId).select("name language maxMarks isConversation");
+    const program = await Program.findById(programId).select("name language maxMarks isConversation criteria criteriaEnabled");
     if (!program) {
       return res.status(404).json({ message: "Program not found." });
     }
@@ -196,6 +238,8 @@ const submitBatchMarks = async (req, res) => {
       }
     }
 
+    const hasCriteria = Boolean(program.criteriaEnabled && program.criteria && program.criteria.length > 0);
+
     // Deduplicate candidate marks in payload (keep latest if duplicate in array)
     const marksByParticipant = new Map();
     for (const item of marks) {
@@ -203,18 +247,50 @@ const submitBatchMarks = async (req, res) => {
         return res.status(400).json({ message: "Invalid participantId format in batch payload." });
       }
 
-      if (item.marksGiven === undefined || item.marksGiven === null) {
-        return res.status(400).json({ message: `Marks missing for participant ${item.participantId}` });
+      let numMark = 0;
+      let formattedCriteriaMarks = [];
+
+      if (hasCriteria) {
+        if (!item.criteriaMarks || !Array.isArray(item.criteriaMarks)) {
+          return res.status(400).json({ message: `Criteria marks missing for participant ${item.participantId}` });
+        }
+        let calculatedTotal = 0;
+        for (const progCrit of program.criteria) {
+          const userCritMark = item.criteriaMarks.find(
+            cm => cm.criterionId && cm.criterionId.toString() === progCrit._id.toString()
+          );
+          if (!userCritMark || userCritMark.marksGiven === undefined || userCritMark.marksGiven === null) {
+            return res.status(400).json({ message: `Criteria mark for '${progCrit.title}' missing for participant ${item.participantId}` });
+          }
+          const cmVal = Number(userCritMark.marksGiven);
+          if (isNaN(cmVal) || cmVal < 0 || cmVal > progCrit.maxMarks) {
+            return res.status(400).json({ message: `Criteria mark for '${progCrit.title}' must be between 0 and ${progCrit.maxMarks}` });
+          }
+          formattedCriteriaMarks.push({
+            criterionId: progCrit._id,
+            title: progCrit.title,
+            marksGiven: cmVal,
+          });
+          calculatedTotal += cmVal;
+        }
+        numMark = calculatedTotal;
+      } else {
+        if (item.marksGiven === undefined || item.marksGiven === null) {
+          return res.status(400).json({ message: `Marks missing for participant ${item.participantId}` });
+        }
+
+        numMark = Number(item.marksGiven);
+        if (isNaN(numMark) || numMark < 0 || numMark > program.maxMarks) {
+          return res.status(400).json({
+            message: `Marks must be a number between 0 and ${program.maxMarks}`,
+          });
+        }
       }
 
-      const numMark = Number(item.marksGiven);
-      if (isNaN(numMark) || numMark < 0 || numMark > program.maxMarks) {
-        return res.status(400).json({
-          message: `Marks must be a number between 0 and ${program.maxMarks}`,
-        });
-      }
-
-      marksByParticipant.set(item.participantId.toString(), numMark);
+      marksByParticipant.set(item.participantId.toString(), {
+        marksGiven: numMark,
+        criteriaMarks: formattedCriteriaMarks,
+      });
     }
 
     const participantIds = Array.from(marksByParticipant.keys());
@@ -236,17 +312,19 @@ const submitBatchMarks = async (req, res) => {
     await session.withTransaction(async () => {
       const bulkOps = [];
       
-      for (const [pId, markVal] of marksByParticipant.entries()) {
+      for (const [pId, markData] of marksByParticipant.entries()) {
+        const setObj = {
+          marksGiven: markData.marksGiven,
+          submitted: true,
+          status: "pending",
+        };
+        if (markData.criteriaMarks && markData.criteriaMarks.length > 0) {
+          setObj.criteriaMarks = markData.criteriaMarks;
+        }
         bulkOps.push({
           updateOne: {
             filter: { judgeId, programId, participantId: pId },
-            update: {
-              $set: {
-                marksGiven: markVal,
-                submitted: true,
-                status: "pending",
-              },
-            },
+            update: { $set: setObj },
             upsert: true,
           },
         });
@@ -260,7 +338,7 @@ const submitBatchMarks = async (req, res) => {
       // Handle Group Program auto-mirroring if isConversation === true
       if (program.isConversation) {
         for (const pId of participantIds) {
-          const markVal = marksByParticipant.get(pId);
+          const markData = marksByParticipant.get(pId);
           const group = await ConversationPair.findOne({
             programId,
             primaryParticipantId: pId,
@@ -271,12 +349,15 @@ const submitBatchMarks = async (req, res) => {
               id => id.toString() !== pId
             );
 
+            const mirrorSet = { marksGiven: markData.marksGiven, submitted: true, status: "pending" };
+            if (markData.criteriaMarks && markData.criteriaMarks.length > 0) {
+              mirrorSet.criteriaMarks = markData.criteriaMarks;
+            }
+
             const mirrorOps = otherMemberIds.map(memberId => ({
               updateOne: {
                 filter: { judgeId, programId, participantId: memberId },
-                update: {
-                  $set: { marksGiven: markVal, submitted: true, status: "pending" },
-                },
+                update: { $set: mirrorSet },
                 upsert: true,
               },
             }));
@@ -858,12 +939,8 @@ const editApprovedMark = async (req, res) => {
     let updatedMark;
     await session.withTransaction(async () => {
       const { id } = req.params;
-      const { newMark, reason } = req.body;
+      const { newMark, criteriaMarks, reason } = req.body;
       const adminId = req.user.id;
-
-      if (typeof newMark !== "number" || newMark < 0) {
-        throw new Error("Invalid mark value.");
-      }
 
       const mark = await JudgeMark.findById(id).session(session);
       if (!mark) {
@@ -872,6 +949,39 @@ const editApprovedMark = async (req, res) => {
 
       if (mark.status !== "approved") {
         throw new Error("Only approved marks can be edited.");
+      }
+
+      const program = await Program.findById(mark.programId).select("criteria maxMarks").session(session);
+
+      let finalMarkValue = 0;
+      let formattedCriteriaMarks = [];
+
+      if (criteriaMarks && Array.isArray(criteriaMarks) && criteriaMarks.length > 0 && program && program.criteria && program.criteria.length > 0) {
+        let calculatedTotal = 0;
+        for (const progCrit of program.criteria) {
+          const userCritMark = criteriaMarks.find(
+            cm => cm.criterionId && cm.criterionId.toString() === progCrit._id.toString()
+          );
+          if (!userCritMark || userCritMark.marksGiven === undefined || userCritMark.marksGiven === null) {
+            throw new Error(`Criteria mark for '${progCrit.title}' is required.`);
+          }
+          const cmVal = Number(userCritMark.marksGiven);
+          if (isNaN(cmVal) || cmVal < 0 || cmVal > progCrit.maxMarks) {
+            throw new Error(`Criteria mark for '${progCrit.title}' must be between 0 and ${progCrit.maxMarks}`);
+          }
+          formattedCriteriaMarks.push({
+            criterionId: progCrit._id,
+            title: progCrit.title,
+            marksGiven: cmVal,
+          });
+          calculatedTotal += cmVal;
+        }
+        finalMarkValue = calculatedTotal;
+      } else {
+        if (typeof newMark !== "number" || newMark < 0) {
+          throw new Error("Invalid mark value.");
+        }
+        finalMarkValue = newMark;
       }
 
       const oldMarkValue = mark.marksGiven;
@@ -885,7 +995,7 @@ const editApprovedMark = async (req, res) => {
             programId: mark.programId,
             participantId: mark.participantId,
             oldMark: oldMarkValue,
-            newMark,
+            newMark: finalMarkValue,
             changedByAdminId: adminId,
             reason: reason || "No reason provided",
           },
@@ -894,12 +1004,15 @@ const editApprovedMark = async (req, res) => {
       );
 
       // 2. Update mark
-      mark.marksGiven = newMark;
+      mark.marksGiven = finalMarkValue;
+      if (formattedCriteriaMarks.length > 0) {
+        mark.criteriaMarks = formattedCriteriaMarks;
+      }
       updatedMark = await mark.save({ session });
     });
     res.json({ message: "Mark updated successfully", mark: updatedMark });
   } catch (error) {
-    if (["Invalid mark value.", "Mark not found.", "Only approved marks can be edited."].includes(error.message)) {
+    if (["Invalid mark value.", "Mark not found.", "Only approved marks can be edited."].includes(error.message) || error.message.startsWith("Criteria mark")) {
        return res.status(400).json({ message: error.message });
     }
     sendError(res, 500, "Error editing mark", error);

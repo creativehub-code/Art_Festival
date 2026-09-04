@@ -71,6 +71,21 @@ export default function JudgeDashboard() {
 
   const groups = Array.from(new Set(participants.map((p: any) => p.groupId?.name).filter(Boolean)));
 
+  const getParticipantDashboardTopic = (p: any): string => {
+    if (!p.programs || p.programs.length === 0) return 'No topic assigned';
+    if (p.programTopics && Array.isArray(p.programTopics)) {
+      for (const pt of p.programTopics) {
+        const progId = typeof pt.programId === 'object' ? pt.programId._id : pt.programId;
+        const prog = p.programs.find((progItem: any) => String(progItem._id || progItem) === String(progId));
+        if (prog && prog.topics && Array.isArray(prog.topics)) {
+          const top = prog.topics.find((t: any) => String(t._id) === String(pt.topicId));
+          if (top && top.title) return top.title;
+        }
+      }
+    }
+    return 'No topic assigned';
+  };
+
   const filteredParticipants = participants.filter((p: any) => {
     const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.chestNumber?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -145,7 +160,7 @@ export default function JudgeDashboard() {
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
             type="text"
-            placeholder={activeTab === 'programs' ? 'Search programs...' : 'Search by name or chest no...'}
+            placeholder={activeTab === 'programs' ? 'Search programs...' : 'Search by topic or chest no...'}
             className="block w-full pl-11 pr-4 py-3 bg-transparent text-white placeholder-gray-500 focus:outline-none text-sm font-medium"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -280,7 +295,7 @@ export default function JudgeDashboard() {
               <tr className="border-b border-[#2D283E] text-gray-500 text-xs uppercase tracking-wider font-semibold">
                 <th className="p-5 w-16">#</th>
                 <th className="p-5 w-28">Chest No</th>
-                <th className="p-5">Name</th>
+                <th className="p-5">Topic</th>
                 <th className="p-5 w-36">Team</th>
                 <th className="p-5 w-32">Category</th>
                 <th className="p-5">Program</th>
@@ -295,7 +310,9 @@ export default function JudgeDashboard() {
                       {p.chestNumber}
                     </div>
                   </td>
-                  <td className="p-5 font-bold text-white group-hover:text-purple-300 transition-colors">{p.name}</td>
+                  <td className="p-5 font-bold text-white group-hover:text-purple-300 transition-colors">
+                    {getParticipantDashboardTopic(p)}
+                  </td>
                   <td className="p-5">
                     <div className="flex items-center gap-1.5 text-gray-400 text-sm">
                       <Trophy size={12} className="text-purple-500" />
@@ -344,7 +361,7 @@ export default function JudgeDashboard() {
                       </span>
                     )}
                   </div>
-                  <p className="text-white font-bold">{p.name}</p>
+                  <p className="text-white font-bold">{getParticipantDashboardTopic(p)}</p>
                   <p className="text-gray-500 text-xs">{p.teamId?.name || 'No Team'} · {p.programs?.[0]?.name || 'No Program'}</p>
                 </div>
               </div>

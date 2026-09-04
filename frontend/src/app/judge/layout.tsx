@@ -41,24 +41,29 @@ export default function JudgeLayout({ children }: { children: React.ReactNode })
     router.push('/login');
   };
 
-  if (!authorized) return <div className="text-white p-10">Checking authorization...</div>;
+  if (!authorized) return <div className="text-white p-10 flex justify-center items-center min-h-screen bg-[#0D0B14]">Checking authorization...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white font-sans">
-      <header className="p-4 bg-gray-900 border-b border-gray-800 flex justify-between items-center bg-opacity-80 backdrop-blur-md sticky top-0 z-20">
-        <div className="flex items-center gap-2">
-          <Award className="text-purple-500" />
-          <h1 className="text-xl font-bold">Judge Panel <span className="text-gray-500 text-sm font-normal">| {user?.name || 'Judge'}</span></h1>
+    <div className="min-h-screen bg-[#0D0B14] text-white font-sans selection:bg-purple-500/30">
+      <header className="px-6 py-3 bg-[#13111C] border-b border-[#2D283E] flex justify-between items-center sticky top-0 z-30">
+        <div className="flex items-center gap-3">
+          <div className="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400">
+            <Award size={18} />
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-bold text-white tracking-tight">Judge Panel</h1>
+            <span className="text-gray-500 text-xs font-medium">| {user?.name || 'Judge'}</span>
+          </div>
         </div>
         <button 
           onClick={handleLogout} 
-          className="text-sm border border-gray-700 hover:bg-red-500/10 hover:text-red-400 px-3 py-1 rounded transition text-gray-400 flex items-center gap-2"
+          className="text-xs font-medium border border-gray-800 hover:border-red-500/30 bg-[#1A1825] hover:bg-red-500/10 text-gray-400 hover:text-red-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5"
         >
-          <LogOut size={16} /> Logout
+          <LogOut size={13} /> Logout
         </button>
       </header>
 
-      <main className="p-6 max-w-4xl mx-auto">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {children}
       </main>
     </div>

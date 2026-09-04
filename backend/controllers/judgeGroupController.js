@@ -86,6 +86,9 @@ const createJudgeGroup = async (req, res) => {
       return res.status(400).json({ message: error.message });
     }
     if (error.code === 11000) {
+      if (error.keyPattern?.name || (error.keyValue && error.keyValue.name)) {
+        return res.status(400).json({ message: `A judge group with the name "${name}" already exists.` });
+      }
       return res.status(400).json({ message: "A judge with this email already exists." });
     }
     sendError(res, 500, "Failed to create judge group", error);
