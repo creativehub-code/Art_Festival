@@ -1,13 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from './api';
 
-// --- TYPES ---
+export interface Criterion {
+  _id: string;
+  title: string;
+  maxMarks: number;
+  position?: number;
+}
+
+export interface CriterionMark {
+  criterionId: string;
+  title?: string;
+  marksGiven: number;
+}
+
 export interface Program {
   _id: string;
   name: string;
   status: string;
   language?: string;
   topics?: { _id: string; title: string }[];
+  criteria?: Criterion[];
   updatedAt?: string;
   groupId?: Group;
   maxMarks?: number;

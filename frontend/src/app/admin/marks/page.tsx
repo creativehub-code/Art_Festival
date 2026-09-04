@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud } from 'lucide-react';
+import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud, X, Edit } from 'lucide-react';
 import { useReviewPrograms, useReviewProgramMarks, useGroups, useInvalidate, useSettings, useConversationPairs } from '@/lib/queries';
 import ToastContainer, { type ToastData } from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -55,14 +55,29 @@ export default function MarksReviewPage() {
   const [detailSearch, setDetailSearch] = useState('');
   const [detailSearchInput, setDetailSearchInput] = useState('');
 
+  // State for detailed mark viewing / editing modal
+  const [activeMarkDetail, setActiveMarkDetail] = useState<{ mark: any; participant: any; judgeName: string; program: any } | null>(null);
+
   // Mark Action Handlers
-  const handleMarkAction = async (markId: string, action: 'approve' | 'reject' | 'edit', newMarkValue?: number, reason?: string) => {
+  const handleMarkAction = async (
+    markId: string, 
+    action: 'approve' | 'reject' | 'edit', 
+    newMarkValue?: number, 
+    reason?: string,
+    criteriaMarksPayload?: any[]
+  ) => {
       try {
           if (action === 'edit') {
-              if (newMarkValue === undefined || !reason) {
-                  return addToast({ title: 'Validation Error', message: "New mark and reason are required for edits.", type: 'warning' });
+              if (!reason) {
+                  return addToast({ title: 'Validation Error', message: "Reason for edit is required.", type: 'warning' });
               }
-              await apiRequest(`/marks/${markId}`, 'PATCH', { newMark: newMarkValue, reason });
+              const payload: any = { reason };
+              if (criteriaMarksPayload && criteriaMarksPayload.length > 0) {
+                payload.criteriaMarks = criteriaMarksPayload;
+              } else if (newMarkValue !== undefined) {
+                payload.newMark = newMarkValue;
+              }
+              await apiRequest(`/marks/${markId}`, 'PATCH', payload);
               addToast({ judgeName: 'System', programName: 'Mark updated successfully', language: '' });
           } else {
               const status = action === 'approve' ? 'approved' : 'rejected';
@@ -172,7 +187,8 @@ export default function MarksReviewPage() {
             judgeName: m.judgeId?.name,
             judgeInitial: m.judgeId?.name?.charAt(0),
             mark: m.marksGiven,
-            status: m.status || 'pending'
+            status: m.status || 'pending',
+            criteriaMarks: m.criteriaMarks || [],
         });
         if (m.status === 'approved') {
             participantMap[pId].totalScore += m.marksGiven || 0;
@@ -659,35 +675,33 @@ export default function MarksReviewPage() {
                                                 return (
                                                     <div key={judge._id} className="text-center flex-1">
                                                         {judgeMark ? (
-                                                            <div className="flex flex-col items-center gap-1.5">
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-600/20 text-purple-300 font-bold font-mono text-base shadow-inner">
-                                                                        {judgeMark.mark}
-                                                                    </div>
-                                                                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                                                                        judgeMark.status === 'approved' ? 'bg-green-500/10 text-green-400' :
-                                                                        judgeMark.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
-                                                                        'bg-yellow-500/10 text-yellow-400'
-                                                                    }`}>
-                                                                        {judgeMark.status}
-                                                                    </span>
-                                                                </div>
-                                                                {judgeMark.status === 'pending' && (
-                                                                    <div className="flex gap-1 mt-1">
-                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'approve')} className="text-[9px] font-bold uppercase bg-green-500/20 hover:bg-green-500/40 text-green-300 px-2 py-1 rounded transition-colors">Approve</button>
-                                                                        <button onClick={() => handleMarkAction(judgeMark.id, 'reject')} className="text-[9px] font-bold uppercase bg-red-500/20 hover:bg-red-500/40 text-red-300 px-2 py-1 rounded transition-colors">Reject</button>
-                                                                    </div>
-                                                                )}
-                                                                {judgeMark.status === 'approved' && (
-                                                                    <button onClick={() => {
-                                                                        const newVal = prompt(`Edit mark for ${m.participant.name} by ${judge.name}\nEnter new mark:`, judgeMark.mark);
-                                                                        if (newVal !== null && !isNaN(Number(newVal))) {
-                                                                            const reason = prompt("Enter reason for editing this approved mark:");
-                                                                            if (reason) handleMarkAction(judgeMark.id, 'edit', Number(newVal), reason);
-                                                                        }
-                                                                    }} className="text-[9px] font-bold uppercase tracking-wider bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-3 py-1 rounded mt-0.5 transition-colors">Edit</button>
-                                                                )}
-                                                            </div>
+                                                             <div className="flex flex-col items-center gap-1.5">
+                                                                 <div className="flex items-center gap-2">
+                                                                     <button 
+                                                                         onClick={() => setActiveMarkDetail({ mark: judgeMark, participant: m.participant, judgeName: judge.name, program: selectedProgramData })}
+                                                                         className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-600/20 text-purple-300 font-bold font-mono text-base shadow-inner hover:bg-purple-600/30 hover:border-purple-500 transition-all cursor-pointer"
+                                                                         title="Click to view detailed breakdown"
+                                                                     >
+                                                                         {judgeMark.mark}
+                                                                     </button>
+                                                                     <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                                                         judgeMark.status === 'approved' ? 'bg-green-500/10 text-green-400' :
+                                                                         judgeMark.status === 'rejected' ? 'bg-red-500/10 text-red-400' :
+                                                                         'bg-yellow-500/10 text-yellow-400'
+                                                                     }`}>
+                                                                         {judgeMark.status}
+                                                                     </span>
+                                                                 </div>
+                                                                 {judgeMark.status === 'pending' && (
+                                                                     <div className="flex gap-1 mt-1">
+                                                                         <button onClick={() => handleMarkAction(judgeMark.id, 'approve')} className="text-[9px] font-bold uppercase bg-green-500/20 hover:bg-green-500/40 text-green-300 px-2 py-1 rounded transition-colors">Approve</button>
+                                                                         <button onClick={() => handleMarkAction(judgeMark.id, 'reject')} className="text-[9px] font-bold uppercase bg-red-500/20 hover:bg-red-500/40 text-red-300 px-2 py-1 rounded transition-colors">Reject</button>
+                                                                     </div>
+                                                                 )}
+                                                                 {judgeMark.status === 'approved' && (
+                                                                     <button onClick={() => setActiveMarkDetail({ mark: judgeMark, participant: m.participant, judgeName: judge.name, program: selectedProgramData })} className="text-[9px] font-bold uppercase tracking-wider bg-blue-500/20 hover:bg-blue-500/40 text-blue-300 px-3 py-1 rounded mt-0.5 transition-colors">Details / Edit</button>
+                                                                 )}
+                                                             </div>
                                                         ) : (
                                                             <span className="text-gray-700 font-bold font-mono">--</span>
                                                         )}
@@ -817,7 +831,12 @@ export default function MarksReviewPage() {
                                                         </span>
                                                     </div>
                                                     <div className="flex items-center justify-between mt-2">
-                                                        <span className="text-sm font-bold text-white font-mono">{jm.mark}</span>
+                                                        <button 
+                                                            onClick={() => setActiveMarkDetail({ mark: jm, participant: m.participant, judgeName: jm.judgeName, program: selectedProgramData })}
+                                                            className="text-sm font-bold text-white font-mono hover:text-purple-300 underline underline-offset-2"
+                                                        >
+                                                            {jm.mark}
+                                                        </button>
                                                         {jm.status === 'pending' && (
                                                             <div className="flex gap-1">
                                                                 <button onClick={() => handleMarkAction(jm.id, 'approve')} className="w-5 h-5 flex items-center justify-center rounded bg-green-500/20 text-green-300 font-bold text-[10px]">✓</button>
@@ -975,6 +994,281 @@ export default function MarksReviewPage() {
           onCancel={() => setShowCalculateConfirm(false)}
         />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      
+      {activeMarkDetail && (
+        <MarkDetailModal
+          detail={activeMarkDetail}
+          onClose={() => setActiveMarkDetail(null)}
+          onSaveEdit={async (markId, payload) => {
+            await handleMarkAction(markId, 'edit', payload.newMark, payload.reason, payload.criteriaMarks);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MarkDetailModal({
+  detail,
+  onClose,
+  onSaveEdit,
+}: {
+  detail: {
+    mark: any;
+    participant: any;
+    judgeName: string;
+    program: any;
+  } | null;
+  onClose: () => void;
+  onSaveEdit: (markId: string, payload: { newMark?: number; criteriaMarks?: any[]; reason: string }) => Promise<void>;
+}) {
+  if (!detail) return null;
+
+  const { mark, participant, judgeName, program } = detail;
+  const programCriteria = program?.criteria || [];
+  const markCriteria = mark.criteriaMarks || [];
+  const hasCriteria = programCriteria.length > 0 || markCriteria.length > 0;
+
+  const [showDetails, setShowDetails] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [criteriaInputs, setCriteriaInputs] = useState<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    if (markCriteria.length > 0) {
+      markCriteria.forEach((cm: any) => {
+        const cId = cm.criterionId?._id || cm.criterionId;
+        map[cId] = cm.marksGiven;
+      });
+    }
+    return map;
+  });
+  const [totalInput, setTotalInput] = useState<number>(mark.mark || 0);
+  const [reasonInput, setReasonInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const calculatedCriteriaTotal = useMemo(() => {
+    if (!hasCriteria) return totalInput;
+    return Object.values(criteriaInputs).reduce((sum, val) => sum + (Number(val) || 0), 0);
+  }, [criteriaInputs, hasCriteria, totalInput]);
+
+  const handleCriterionChange = (cId: string, valStr: string, maxVal: number) => {
+    const val = Number(valStr);
+    if (isNaN(val) || val < 0 || val > maxVal) return;
+    setCriteriaInputs(prev => ({ ...prev, [cId]: val }));
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reasonInput.trim()) {
+      setErrorMsg('Reason for editing is required.');
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMsg('');
+    try {
+      if (hasCriteria) {
+        const criteriaMarksPayload = programCriteria.map((c: any) => ({
+          criterionId: c._id,
+          title: c.title,
+          marksGiven: Number(criteriaInputs[c._id] || 0),
+        }));
+        await onSaveEdit(mark.id, {
+          criteriaMarks: criteriaMarksPayload,
+          reason: reasonInput.trim(),
+        });
+      } else {
+        await onSaveEdit(mark.id, {
+          newMark: Number(totalInput),
+          reason: reasonInput.trim(),
+        });
+      }
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save edit.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-[#1A1828] border border-[#2D283E] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl space-y-0 text-left">
+        {/* Modal Header */}
+        <div className="p-5 border-b border-[#2D283E] flex justify-between items-start bg-[#13111C]">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-xs font-bold">
+                #{participant?.chestNumber || 'N/A'}
+              </span>
+              <h3 className="text-base font-bold text-white">{participant?.name}</h3>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Evaluated by <span className="text-purple-300 font-bold">{judgeName}</span> ({program?.name})
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Modal Content */}
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {errorMsg && (
+            <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-xl font-medium">
+              {errorMsg}
+            </div>
+          )}
+
+          {!isEditing ? (
+            /* Detailed Breakdown View */
+            <div className="space-y-4">
+              <div className="p-3.5 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-purple-300 block">Total Score</span>
+                  <span className="text-[10px] text-gray-400 font-medium">Evaluated Mark</span>
+                </div>
+                <span className="font-mono text-xl font-bold text-white">
+                  {mark.mark} / {program?.maxMarks || 100}
+                </span>
+              </div>
+
+              {hasCriteria ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDetails(!showDetails)}
+                    className="w-full flex items-center justify-between p-2.5 bg-[#13111C] border border-gray-800 hover:border-gray-700 rounded-xl text-xs font-bold text-gray-300 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5 text-purple-300">
+                      <ChevronDown size={14} className={`transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+                      {showDetails ? 'Hide Criteria Details' : '▼ Details (Criteria Breakdown)'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      {(programCriteria.length || markCriteria.length)} items
+                    </span>
+                  </button>
+
+                  {showDetails && (
+                    <div className="bg-[#13111C] rounded-xl border border-gray-800 overflow-hidden divide-y divide-gray-800 animate-in fade-in duration-200">
+                      {programCriteria.map((crit: any) => {
+                        const critMark = markCriteria.find((cm: any) => (cm.criterionId?._id || cm.criterionId) === crit._id) || criteriaInputs[crit._id];
+                        const scoreVal = typeof critMark === 'object' ? critMark?.marksGiven : (critMark !== undefined ? critMark : 0);
+                        return (
+                          <div key={crit._id} className="p-3 flex justify-between items-center text-xs">
+                            <span className="font-medium text-gray-300">{crit.title}</span>
+                            <span className="font-mono font-bold text-white">
+                              <span className="text-purple-300">{scoreVal}</span> / {crit.maxMarks}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 bg-[#13111C] rounded-xl border border-gray-800 text-center">
+                  <p className="text-xs text-gray-400">This program uses Total Mark Only evaluation.</p>
+                </div>
+              )}
+
+              {mark.status === 'approved' && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="w-full py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold text-xs rounded-xl border border-blue-500/30 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Edit size={14} /> Edit Approved Mark
+                </button>
+              )}
+            </div>
+          ) : (
+            /* Editing View */
+            <form onSubmit={handleSave} className="space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-300">
+                Edit Mark Breakdown
+              </h4>
+
+              {hasCriteria ? (
+                <div className="space-y-2">
+                  {programCriteria.map((crit: any) => {
+                    const currentVal = criteriaInputs[crit._id] !== undefined ? criteriaInputs[crit._id] : 0;
+                    return (
+                      <div key={crit._id} className="flex items-center justify-between p-2.5 bg-[#13111C] rounded-xl border border-gray-800">
+                        <span className="text-xs font-medium text-gray-300">{crit.title}</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            max={crit.maxMarks}
+                            value={currentVal}
+                            onChange={(e) => handleCriterionChange(crit._id, e.target.value, crit.maxMarks)}
+                            className="w-16 bg-[#0B0914] border border-gray-700 focus:border-purple-500 text-center font-mono text-white text-xs p-1.5 rounded-lg outline-none"
+                          />
+                          <span className="text-xs text-gray-500 font-mono">/ {crit.maxMarks}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-300">Calculated New Total:</span>
+                    <span className="font-mono text-base font-bold text-white">
+                      {calculatedCriteriaTotal} / {program?.maxMarks}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-xs text-gray-400 font-bold uppercase block">New Total Mark</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max={program?.maxMarks}
+                      value={totalInput}
+                      onChange={(e) => setTotalInput(Number(e.target.value))}
+                      className="w-full bg-[#13111C] border border-gray-700 focus:border-purple-500 font-mono text-white text-sm p-2.5 rounded-xl outline-none"
+                    />
+                    <span className="text-xs text-gray-500 font-mono">/ {program?.maxMarks}</span>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs text-gray-400 font-bold uppercase block mb-1">Reason for Change (Audit Log)</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g., Re-evaluated criteria score upon admin review"
+                  value={reasonInput}
+                  onChange={(e) => setReasonInput(e.target.value)}
+                  className="w-full bg-[#13111C] border border-gray-700 focus:border-purple-500 text-white text-xs p-2.5 rounded-xl outline-none"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold rounded-xl transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving...' : 'Save & Update Mark'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

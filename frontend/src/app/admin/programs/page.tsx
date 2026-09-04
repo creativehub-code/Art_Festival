@@ -64,7 +64,7 @@ export default function ProgramsPage() {
 
   // Expandable Row State
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'participants' | 'topics'>('participants');
+  const [activeTab, setActiveTab] = useState<'participants' | 'topics' | 'criteria'>('participants');
   const { data: participants = [] as any[] } = useParticipants();
 
   /** Sort programs within a language by languagePosition (nulls last), then by name */
@@ -301,9 +301,21 @@ export default function ProgramsPage() {
                                                       >
                                                           Topics
                                                       </button>
+                                                      <button 
+                                                          onClick={(e) => { e.stopPropagation(); setActiveTab('criteria'); }}
+                                                          className={`pb-3 px-2 font-bold text-sm transition-colors border-b-2 flex items-center gap-1.5 ${activeTab === 'criteria' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                                                      >
+                                                          Evaluation Criteria
+                                                          {p.criteria && p.criteria.length > 0 && (
+                                                              <span className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded-full font-mono">
+                                                                  {p.criteria.length}
+                                                              </span>
+                                                          )}
+                                                      </button>
                                                   </div>
                                                   {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} />}
                                                   {activeTab === 'topics' && <TopicsTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} participants={participants} />}
+                                                  {activeTab === 'criteria' && <CriteriaTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} />}
                                               </div>
                                           )}
                                         </div>
@@ -379,12 +391,14 @@ export default function ProgramsPage() {
                                         </div>
                                       {expandedProgramId === p._id && (
                                           <div className="border border-white/[0.07] border-t-0 bg-[#13111C]/80 rounded-b-xl p-4">
-                                              <div className="flex gap-4 border-b border-gray-800 mb-4">
+                                              <div className="flex gap-4 border-b border-gray-800 mb-4 overflow-x-auto">
                                                   <button onClick={(e) => { e.stopPropagation(); setActiveTab('participants'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'participants' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Participants</button>
                                                   <button onClick={(e) => { e.stopPropagation(); setActiveTab('topics'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'topics' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Topics</button>
+                                                  <button onClick={(e) => { e.stopPropagation(); setActiveTab('criteria'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'criteria' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Criteria ({p.criteria?.length || 0})</button>
                                               </div>
                                               {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} />}
                                               {activeTab === 'topics' && <TopicsTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} participants={participants} />}
+                                              {activeTab === 'criteria' && <CriteriaTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} />}
                                           </div>
                                       )}
                                     </div>
@@ -424,16 +438,254 @@ export default function ProgramsPage() {
           />
       )}
 
+      {deleteConfirmId && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Program"
+          message="Are you sure you want to delete this program? This will remove all associated results and cannot be undone."
+          confirmText="Delete Program"
+          variant="danger"
+          isLoading={isDeleting}
+          onConfirm={confirmDeleteProgram}
+          onCancel={() => setDeleteConfirmId(null)}
+        />
+      )}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+    </div>
+  );
+}
+
+function CriteriaTab({ program, refreshPrograms, addToast }: { program: any; refreshPrograms: () => void; addToast: any }) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingCriterionId, setEditingCriterionId] = useState<string | null>(null);
+  const [titleInput, setTitleInput] = useState('');
+  const [maxMarksInput, setMaxMarksInput] = useState<string>('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const criteria = program.criteria || [];
+  const totalCriteriaMax = criteria.reduce((sum: number, c: any) => sum + Number(c.maxMarks || 0), 0);
+  const programMax = program.maxMarks || 100;
+  const isMatch = totalCriteriaMax === programMax;
+
+  const handleSaveCriterion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!titleInput.trim()) {
+      addToast({ title: 'Validation Error', message: 'Criterion title is required', type: 'warning' });
+      return;
+    }
+    const marksNum = Number(maxMarksInput);
+    if (isNaN(marksNum) || marksNum <= 0) {
+      addToast({ title: 'Validation Error', message: 'Maximum marks must be greater than 0', type: 'warning' });
+      return;
+    }
+
+    try {
+      if (editingCriterionId) {
+        await apiRequest(`/programs/${program._id}/criteria/${editingCriterionId}`, 'PUT', {
+          title: titleInput.trim(),
+          maxMarks: marksNum,
+        });
+        addToast({ title: 'Success', message: 'Criterion updated successfully', type: 'success' });
+      } else {
+        await apiRequest(`/programs/${program._id}/criteria`, 'POST', {
+          title: titleInput.trim(),
+          maxMarks: marksNum,
+        });
+        addToast({ title: 'Success', message: 'Criterion added successfully', type: 'success' });
+      }
+      refreshPrograms();
+      setIsAdding(false);
+      setEditingCriterionId(null);
+      setTitleInput('');
+      setMaxMarksInput('');
+    } catch (err: any) {
+      addToast({ title: 'Error', message: err.message || 'Failed to save criterion', type: 'error' });
+    }
+  };
+
+  const handleEditClick = (crit: any) => {
+    setEditingCriterionId(crit._id);
+    setTitleInput(crit.title);
+    setMaxMarksInput(String(crit.maxMarks));
+    setIsAdding(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmId) return;
+    try {
+      await apiRequest(`/programs/${program._id}/criteria/${deleteConfirmId}`, 'DELETE');
+      addToast({ title: 'Success', message: 'Criterion deleted successfully', type: 'success' });
+      refreshPrograms();
+    } catch (err: any) {
+      addToast({ title: 'Error', message: err.message || 'Failed to delete criterion', type: 'error' });
+    } finally {
+      setDeleteConfirmId(null);
+    }
+  };
+
+  const handleToggleCriteriaMode = async (enabled: boolean) => {
+    try {
+      await apiRequest(`/programs/${program._id}`, 'PATCH', { criteriaEnabled: enabled });
+      refreshPrograms();
+      addToast({ title: 'Success', message: `Detailed Criteria Marking turned ${enabled ? 'ON' : 'OFF'}`, type: 'success' });
+    } catch (err: any) {
+      addToast({ title: 'Error', message: err.message || 'Failed to update criteria mode', type: 'error' });
+    }
+  };
+
+  return (
+    <div className="space-y-4 text-left">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-[#1E1B2E] p-4 rounded-xl border border-[#2D283E]">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              Detailed Criteria Marking
+              <button
+                type="button"
+                onClick={() => handleToggleCriteriaMode(!program.criteriaEnabled)}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
+                  program.criteriaEnabled
+                    ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-900/30'
+                    : 'bg-gray-800 text-gray-400 hover:text-white border-gray-700'
+                }`}
+              >
+                {program.criteriaEnabled ? 'ON' : 'OFF'}
+              </button>
+            </h4>
+            {criteria.length > 0 && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                isMatch ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+              }`}>
+                {isMatch ? 'Valid Configuration' : `Sum (${totalCriteriaMax}) ≠ Program Max (${programMax})`}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400">
+            {program.criteriaEnabled
+              ? `ON — Judges evaluate individual criteria (Total: ${totalCriteriaMax} marks).`
+              : 'OFF — Judges enter the final total mark directly.'}
+          </p>
+        </div>
+        {!isAdding && (
+          <button
+            onClick={() => {
+              setEditingCriterionId(null);
+              setTitleInput('');
+              setMaxMarksInput('');
+              setIsAdding(true);
+            }}
+            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs rounded-lg transition-colors flex items-center gap-1 shadow-md shadow-purple-900/30 shrink-0"
+          >
+            + Add Criterion
+          </button>
+        )}
+      </div>
+
+      {isAdding && (
+        <form onSubmit={handleSaveCriterion} className="p-4 bg-[#1A1828] rounded-xl border border-purple-500/30 space-y-3">
+          <h5 className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+            {editingCriterionId ? 'Edit Criterion' : 'Add New Criterion'}
+          </h5>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Criterion Title</label>
+              <input
+                type="text"
+                placeholder="e.g. Presentation & Delivery"
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                className="w-full bg-[#110F1B] border border-gray-700 focus:border-purple-500 rounded-lg p-2 text-white text-xs outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 font-bold uppercase block mb-1">Max Marks</label>
+              <input
+                type="number"
+                min="1"
+                placeholder="e.g. 20"
+                value={maxMarksInput}
+                onChange={(e) => setMaxMarksInput(e.target.value)}
+                className="w-full bg-[#110F1B] border border-gray-700 focus:border-purple-500 rounded-lg p-2 text-white text-xs outline-none font-mono"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAdding(false);
+                setEditingCriterionId(null);
+              }}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-lg transition-colors"
+            >
+              {editingCriterionId ? 'Update' : 'Add'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {criteria.length === 0 && !isAdding && (
+        <div className="py-6 text-center text-gray-500 bg-[#13111C]/30 rounded-xl border border-white/[0.04]">
+          <p className="text-xs">No criteria added. Program uses standard single Total Mark mode.</p>
+        </div>
+      )}
+
+      {criteria.length > 0 && (
+        <div className="bg-[#1A1828] rounded-xl border border-gray-800 overflow-hidden divide-y divide-gray-800">
+          {criteria.map((crit: any, idx: number) => (
+            <div key={crit._id} className="p-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+              <div className="flex items-center gap-3">
+                <span className="w-5 h-5 rounded-full bg-purple-500/10 text-purple-400 font-mono text-[10px] font-bold flex items-center justify-center border border-purple-500/20">
+                  {idx + 1}
+                </span>
+                <div>
+                  <span className="text-xs font-bold text-white">{crit.title}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="px-2.5 py-1 rounded-md bg-[#110F1B] border border-gray-700 text-purple-300 font-mono text-xs font-bold">
+                  {crit.maxMarks} marks
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleEditClick(crit)}
+                    className="p-1.5 text-gray-400 hover:text-blue-400 transition-colors"
+                    title="Edit"
+                  >
+                    <Edit size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmId(crit._id)}
+                    className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <ConfirmModal
         isOpen={!!deleteConfirmId}
-        title="Delete Program"
-        message="Are you sure you want to delete this program? This action cannot be undone."
+        title="Delete Criterion"
+        message="Are you sure you want to delete this criterion? This action cannot be undone."
         confirmText="Delete"
-        isLoading={isDeleting}
-        onConfirm={confirmDeleteProgram}
+        variant="danger"
+        onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirmId(null)}
       />
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
     </div>
   );
@@ -682,6 +934,119 @@ function NewLanguageModal({
 
 
 // ---------------------------------------------------------------------------
+// Criteria Form Section
+// ---------------------------------------------------------------------------
+function CriteriaFormSection({
+    criteriaEnabled,
+    criteria,
+    onChangeEnabled,
+    onChangeCriteria,
+}: {
+    criteriaEnabled: boolean;
+    criteria: Array<{ _id?: string; title: string; maxMarks: number | string }>;
+    onChangeEnabled: (val: boolean) => void;
+    onChangeCriteria: (criteria: Array<{ _id?: string; title: string; maxMarks: number | string }>) => void;
+}) {
+    const totalMax = criteria.reduce((sum, c) => sum + (Number(c.maxMarks) || 0), 0);
+
+    const handleAddCriterion = () => {
+        onChangeCriteria([...criteria, { title: '', maxMarks: '' }]);
+    };
+
+    const handleRemoveCriterion = (index: number) => {
+        onChangeCriteria(criteria.filter((_, i) => i !== index));
+    };
+
+    const handleUpdateCriterion = (index: number, field: 'title' | 'maxMarks', val: any) => {
+        const next = [...criteria];
+        next[index] = { ...next[index], [field]: val };
+        onChangeCriteria(next);
+    };
+
+    return (
+        <div className="p-4 rounded-2xl bg-[#110E1B] border border-[#2A243A] space-y-4 text-left">
+            <div className="flex items-center justify-between gap-4">
+                <div>
+                    <p className="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-2">
+                        <FileText size={14} className="text-purple-400" /> Detailed Criteria Marking
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                        {criteriaEnabled ? 'ON — Judges evaluate individual program criteria.' : 'OFF — Judges enter final total mark directly.'}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => onChangeEnabled(!criteriaEnabled)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border shrink-0 ${
+                        criteriaEnabled
+                            ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-900/30'
+                            : 'bg-[#191526] text-gray-400 border-gray-700 hover:border-gray-600'
+                    }`}
+                >
+                    {criteriaEnabled ? 'ON' : 'OFF'}
+                </button>
+            </div>
+
+            {criteriaEnabled && (
+                <div className="space-y-3 pt-3 border-t border-[#262035]">
+                    <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Evaluation Criteria</span>
+                        <button
+                            type="button"
+                            onClick={handleAddCriterion}
+                            className="text-xs font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                        >
+                            <Plus size={13} /> Add Criterion
+                        </button>
+                    </div>
+
+                    {criteria.map((crit, idx) => (
+                        <div key={idx} className="flex items-center gap-2 bg-[#171424] p-2.5 rounded-xl border border-gray-800">
+                            <input
+                                type="text"
+                                placeholder="Criterion Name (e.g. Presentation)"
+                                value={crit.title}
+                                onChange={(e) => handleUpdateCriterion(idx, 'title', e.target.value)}
+                                className="flex-1 px-3 py-2 rounded-lg bg-[#110E1B] border border-[#2D283E] text-white text-xs outline-none focus:border-purple-500"
+                            />
+                            <div className="w-28">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    placeholder="Max Marks"
+                                    value={crit.maxMarks}
+                                    onChange={(e) => handleUpdateCriterion(idx, 'maxMarks', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg bg-[#110E1B] border border-[#2D283E] text-white text-xs font-mono outline-none focus:border-purple-500 text-center"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveCriterion(idx)}
+                                className="p-1.5 text-gray-500 hover:text-red-400 transition-colors"
+                                title="Remove Criterion"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    ))}
+
+                    {criteria.length === 0 && (
+                        <div className="text-xs text-amber-400/90 italic p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                            No criteria added yet. Click "+ Add Criterion" above.
+                        </div>
+                    )}
+
+                    <div className="flex justify-between items-center p-3 rounded-xl bg-[#141120] border border-gray-800 text-xs font-bold">
+                        <span className="text-gray-300">Total Maximum Marks:</span>
+                        <span className="text-purple-300 font-mono text-sm">{totalMax} Marks</span>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Create Program Modal
 // ---------------------------------------------------------------------------
 function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshPrograms, addToast }: { 
@@ -703,6 +1068,8 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
         isConversation: false,
         globalPosition: '',
         languagePosition: '',
+        criteriaEnabled: false,
+        criteria: [] as Array<{ title: string; maxMarks: string | number }>,
     });
     const [createMultiple, setCreateMultiple] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -727,6 +1094,8 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 isConversation: false,
                 globalPosition: '',
                 languagePosition: '',
+                criteriaEnabled: false,
+                criteria: [],
             }));
         }
     }, [isOpen]);
@@ -745,6 +1114,33 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (form.criteriaEnabled) {
+            if (!form.criteria || form.criteria.length === 0) {
+                addToast({ title: 'Validation Error', message: 'Please add at least one criterion when Detailed Criteria Marking is ON.', type: 'warning' });
+                return;
+            }
+            const titlesSet = new Set();
+            for (let i = 0; i < form.criteria.length; i++) {
+                const c = form.criteria[i];
+                if (!c.title || !c.title.trim()) {
+                    addToast({ title: 'Validation Error', message: `Criterion ${i + 1} name cannot be empty.`, type: 'warning' });
+                    return;
+                }
+                const titleLower = c.title.trim().toLowerCase();
+                if (titlesSet.has(titleLower)) {
+                    addToast({ title: 'Validation Error', message: `Duplicate criterion name "${c.title.trim()}". Names must be unique.`, type: 'warning' });
+                    return;
+                }
+                titlesSet.add(titleLower);
+                const maxM = Number(c.maxMarks);
+                if (isNaN(maxM) || maxM <= 0) {
+                    addToast({ title: 'Validation Error', message: `Criterion "${c.title.trim()}" max marks must be a positive number greater than 0.`, type: 'warning' });
+                    return;
+                }
+            }
+        }
+
         setLoading(true);
         try {
             const payload: any = {
@@ -755,13 +1151,15 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 isConversation: form.isConversation,
                 globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
                 languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+                criteriaEnabled: form.criteriaEnabled,
+                criteria: form.criteriaEnabled ? form.criteria.map((c, idx) => ({ title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
             };
             await apiRequest('/programs', 'POST', payload);
             refreshPrograms();
             addToast({ title: 'Success', message: 'Program created successfully!', type: 'success' });
             
             if (createMultiple) {
-                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '' }));
+                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '', criteria: [] }));
                 const nameInput = document.getElementById('program-name-input');
                 if (nameInput) nameInput.focus();
             } else {
@@ -813,9 +1211,9 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                         </button>
                     </div>
 
-                    {/* ── FORM — block layout, no scroll ── */}
+                    {/* ── FORM — scrollable container ── */}
                     <form onSubmit={handleSubmit} className="relative z-10">
-                        <div className="px-8 py-6 space-y-5 bg-[#151224]">
+                        <div className="px-8 py-6 space-y-5 bg-[#151224] max-h-[68vh] overflow-y-auto custom-scrollbar">
 
                             {/* Row 1: Program Name — full width */}
                             <div className="space-y-2">
@@ -892,6 +1290,14 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Criteria Configuration Section */}
+                            <CriteriaFormSection
+                                criteriaEnabled={form.criteriaEnabled}
+                                criteria={form.criteria}
+                                onChangeEnabled={(val) => setForm(prev => ({ ...prev, criteriaEnabled: val }))}
+                                onChangeCriteria={(newCriteria) => setForm(prev => ({ ...prev, criteria: newCriteria }))}
+                            />
 
                             {/* Row 4: Group Program toggle + Program Order — side by side */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -1002,6 +1408,8 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
         isConversation: program.isConversation || false,
         globalPosition: program.globalPosition != null ? String(program.globalPosition) : '',
         languagePosition: program.languagePosition != null ? String(program.languagePosition) : '',
+        criteriaEnabled: program.criteriaEnabled || false,
+        criteria: (program.criteria || []).map((c: any) => ({ _id: c._id, title: c.title, maxMarks: c.maxMarks })),
     });
     const [loading, setLoading] = useState(false);
     const { data: dbLanguages = [] } = useLanguages();
@@ -1014,6 +1422,33 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (form.criteriaEnabled) {
+            if (!form.criteria || form.criteria.length === 0) {
+                addToast({ title: 'Validation Error', message: 'Please add at least one criterion when Detailed Criteria Marking is ON.', type: 'warning' });
+                return;
+            }
+            const titlesSet = new Set();
+            for (let i = 0; i < form.criteria.length; i++) {
+                const c = form.criteria[i];
+                if (!c.title || !c.title.trim()) {
+                    addToast({ title: 'Validation Error', message: `Criterion ${i + 1} name cannot be empty.`, type: 'warning' });
+                    return;
+                }
+                const titleLower = c.title.trim().toLowerCase();
+                if (titlesSet.has(titleLower)) {
+                    addToast({ title: 'Validation Error', message: `Duplicate criterion name "${c.title.trim()}". Names must be unique.`, type: 'warning' });
+                    return;
+                }
+                titlesSet.add(titleLower);
+                const maxM = Number(c.maxMarks);
+                if (isNaN(maxM) || maxM <= 0) {
+                    addToast({ title: 'Validation Error', message: `Criterion "${c.title.trim()}" max marks must be a positive number greater than 0.`, type: 'warning' });
+                    return;
+                }
+            }
+        }
+
         setLoading(true);
         try {
             const payload: any = {
@@ -1024,6 +1459,8 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                 isConversation: form.isConversation,
                 globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
                 languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+                criteriaEnabled: form.criteriaEnabled,
+                criteria: form.criteriaEnabled ? form.criteria.map((c: any, idx: number) => ({ _id: c._id, title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
             };
             await apiRequest(`/programs/${program._id}`, 'PATCH', payload);
             refreshPrograms();
@@ -1137,6 +1574,14 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                                 ))}
                             </div>
                         </div>
+
+                        {/* Criteria Configuration Section */}
+                        <CriteriaFormSection
+                            criteriaEnabled={form.criteriaEnabled}
+                            criteria={form.criteria}
+                            onChangeEnabled={(val) => setForm(prev => ({ ...prev, criteriaEnabled: val }))}
+                            onChangeCriteria={(newCriteria) => setForm(prev => ({ ...prev, criteria: newCriteria }))}
+                        />
 
                         {/* Group Program toggle */}
                         <label className="flex items-center gap-3 p-3.5 sm:p-4 rounded-xl bg-[#13111C] border border-[#2D283E] cursor-pointer hover:bg-[#1A1825] hover:border-indigo-500/30 transition-all group">

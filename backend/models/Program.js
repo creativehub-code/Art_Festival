@@ -34,6 +34,29 @@ const programSchema = new mongoose.Schema(
         },
       },
     ],
+    criteria: [
+      {
+        title: {
+          type: String,
+          trim: true,
+          required: true,
+        },
+        maxMarks: {
+          type: Number,
+          required: true,
+          min: 0,
+        },
+        position: {
+          type: Number,
+          default: 0,
+        },
+      },
+    ],
+    // When true, judges score using detailed criteria breakdown
+    criteriaEnabled: {
+      type: Boolean,
+      default: false,
+    },
     // When true, this program requires exactly two participants registered as a pair
     isConversation: {
       type: Boolean,

@@ -22,6 +22,22 @@ const judgeMarkSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    criteriaMarks: [
+      {
+        criterionId: {
+          type: mongoose.Schema.Types.ObjectId,
+          required: true,
+        },
+        title: {
+          type: String,
+        },
+        marksGiven: {
+          type: Number,
+          required: true,
+          min: 0,
+        },
+      },
+    ],
     submitted: {
       type: Boolean,
       default: false,

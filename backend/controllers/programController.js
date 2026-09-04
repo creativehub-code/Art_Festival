@@ -65,6 +65,43 @@ async function shiftLanguageDown(language, vacatedPos, excludeId = null, session
   await Program.updateMany(filter, { $inc: { languagePosition: -1 } }, { session });
 }
 
+/**
+ * Validate program criteria configuration.
+ * Enforces non-empty titles, unique title names, and positive maxMarks > 0.
+ * Automatically calculates the sum of criteria maxMarks.
+ */
+function validateCriteria(criteria, criteriaEnabled) {
+  if (!criteriaEnabled) return { validCriteria: criteria || [], totalMaxMarks: null };
+  if (!criteria || !Array.isArray(criteria) || criteria.length === 0) {
+    throw new Error("At least one criterion is required when Detailed Criteria Marking is enabled.");
+  }
+  const titlesSet = new Set();
+  let total = 0;
+  const validCriteria = criteria.map((c, idx) => {
+    const title = c.title ? String(c.title).trim() : (c.name ? String(c.name).trim() : "");
+    if (!title) {
+      throw new Error(`Criterion ${idx + 1} name cannot be empty.`);
+    }
+    const titleLower = title.toLowerCase();
+    if (titlesSet.has(titleLower)) {
+      throw new Error(`Duplicate criterion name "${title}". Each criterion name must be unique.`);
+    }
+    titlesSet.add(titleLower);
+    const maxMarks = Number(c.maxMarks);
+    if (isNaN(maxMarks) || maxMarks <= 0) {
+      throw new Error(`Criterion "${title}" max marks must be a positive number greater than 0.`);
+    }
+    total += maxMarks;
+    return {
+      _id: c._id || new mongoose.Types.ObjectId(),
+      title,
+      maxMarks,
+      position: c.position !== undefined ? c.position : idx,
+    };
+  });
+  return { validCriteria, totalMaxMarks: total };
+}
+
 // ---------------------------------------------------------------------------
 // Controllers
 // ---------------------------------------------------------------------------
@@ -142,7 +179,7 @@ const getPrograms = async (req, res) => {
 const createProgram = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { name, maxMarks, groupId, status, language, isConversation, topics, globalPosition: gpRaw, languagePosition: lpRaw } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw } = req.body;
 
     // Validate positions
     let globalPosition, languagePosition;
@@ -163,14 +200,27 @@ const createProgram = async (req, res) => {
       }
     }
 
+    // Validate criteria configuration
+    const isCriteriaEnabled = Boolean(criteriaEnabled);
+    const { validCriteria, totalMaxMarks } = validateCriteria(criteria, isCriteriaEnabled);
+
     const payload = {};
     if (name !== undefined)           payload.name = name;
-    if (maxMarks !== undefined)       payload.maxMarks = maxMarks;
     if (groupId !== undefined)        payload.groupId = groupId;
     if (status !== undefined)         payload.status = status;
     if (language !== undefined)       payload.language = language;
     if (isConversation !== undefined) payload.isConversation = isConversation;
     if (topics !== undefined)         payload.topics = topics;
+    
+    payload.criteriaEnabled = isCriteriaEnabled;
+    payload.criteria = validCriteria;
+
+    if (isCriteriaEnabled && totalMaxMarks !== null) {
+      payload.maxMarks = totalMaxMarks;
+    } else if (maxMarks !== undefined) {
+      payload.maxMarks = maxMarks;
+    }
+
     payload.globalPosition = globalPosition;
     payload.languagePosition = languagePosition;
 
@@ -201,7 +251,7 @@ const updateProgram = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { name, maxMarks, groupId, status, language, isConversation, topics, globalPosition: gpRaw, languagePosition: lpRaw } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw } = req.body;
 
     // Validate positions
     let newGlobalPosition, newLanguagePosition;
@@ -224,12 +274,12 @@ const updateProgram = async (req, res) => {
 
     const updateData = {};
     if (name !== undefined)           updateData.name = name;
-    if (maxMarks !== undefined)       updateData.maxMarks = maxMarks;
     if (groupId !== undefined)        updateData.groupId = groupId;
     if (status !== undefined)         updateData.status = status;
     if (language !== undefined)       updateData.language = language;
     if (isConversation !== undefined) updateData.isConversation = isConversation;
     if (topics !== undefined)         updateData.topics = topics;
+
     if (newGlobalPosition !== undefined) updateData.globalPosition = newGlobalPosition;
     if (newLanguagePosition !== undefined) updateData.languagePosition = newLanguagePosition;
 
@@ -238,6 +288,26 @@ const updateProgram = async (req, res) => {
       // Fetch the current state of the program before updating
       const existing = await Program.findById(id).session(session);
       if (!existing) throw new Error("PROGRAM_NOT_FOUND");
+
+      if (criteriaEnabled !== undefined || criteria !== undefined) {
+        const isCriteriaEnabled = criteriaEnabled !== undefined ? Boolean(criteriaEnabled) : existing.criteriaEnabled;
+        const effectiveCriteria = criteria !== undefined ? criteria : (existing.criteria || []);
+        
+        const { validCriteria, totalMaxMarks } = validateCriteria(effectiveCriteria, isCriteriaEnabled);
+        
+        updateData.criteriaEnabled = isCriteriaEnabled;
+        if (criteria !== undefined) {
+          updateData.criteria = validCriteria;
+        }
+        
+        if (isCriteriaEnabled && totalMaxMarks !== null) {
+          updateData.maxMarks = totalMaxMarks;
+        } else if (maxMarks !== undefined) {
+          updateData.maxMarks = maxMarks;
+        }
+      } else if (maxMarks !== undefined) {
+        updateData.maxMarks = maxMarks;
+      }
 
       const oldGlobalPos = existing.globalPosition;
       const oldLangPos = existing.languagePosition;
@@ -532,6 +602,155 @@ const deleteTopic = async (req, res) => {
   }
 };
 
+const addCriterion = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let { title, maxMarks } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Criterion title is required" });
+    }
+    title = title.trim();
+
+    const marksNum = Number(maxMarks);
+    if (isNaN(marksNum) || marksNum <= 0) {
+      return res.status(400).json({ message: "Criterion max marks must be greater than 0" });
+    }
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    // Check duplicate criterion title
+    const isDuplicate = (program.criteria || []).some(
+      (c) => c.title.toLowerCase() === title.toLowerCase()
+    );
+    if (isDuplicate) {
+      return res.status(400).json({ message: "Criterion with this title already exists" });
+    }
+
+    const nextPosition = (program.criteria || []).length;
+    if (!program.criteria) program.criteria = [];
+    program.criteria.push({ title, maxMarks: marksNum, position: nextPosition });
+
+    // Sum criteria max marks to update program.maxMarks
+    program.maxMarks = program.criteria.reduce((sum, c) => sum + Number(c.maxMarks), 0);
+
+    await program.save();
+    res.status(201).json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const updateCriterion = async (req, res) => {
+  try {
+    const { id, criterionId } = req.params;
+    let { title, maxMarks } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: "Criterion title is required" });
+    }
+    title = title.trim();
+
+    const marksNum = Number(maxMarks);
+    if (isNaN(marksNum) || marksNum <= 0) {
+      return res.status(400).json({ message: "Criterion max marks must be greater than 0" });
+    }
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    const criterion = program.criteria ? program.criteria.id(criterionId) : null;
+    if (!criterion) return res.status(404).json({ message: "Criterion not found" });
+
+    // Check duplicate (excluding self)
+    const isDuplicate = program.criteria.some(
+      (c) => c.title.toLowerCase() === title.toLowerCase() && c._id.toString() !== criterionId
+    );
+    if (isDuplicate) {
+      return res.status(400).json({ message: "Criterion with this title already exists" });
+    }
+
+    criterion.title = title;
+    criterion.maxMarks = marksNum;
+
+    // Recalculate total maxMarks
+    program.maxMarks = program.criteria.reduce((sum, c) => sum + Number(c.maxMarks), 0);
+
+    await program.save();
+    res.json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteCriterion = async (req, res) => {
+  try {
+    const { id, criterionId } = req.params;
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    const criterionIndex = (program.criteria || []).findIndex(c => c._id.toString() === criterionId);
+    if (criterionIndex === -1) {
+      return res.status(404).json({ message: "Criterion not found" });
+    }
+
+    // Check if criterion is in use in any JudgeMark
+    const inUseByMark = await JudgeMark.exists({ programId: id, "criteriaMarks.criterionId": criterionId });
+    if (inUseByMark) {
+      return res.status(400).json({ message: "Cannot delete criterion because marks have already been submitted using it." });
+    }
+
+    program.criteria.splice(criterionIndex, 1);
+    if (program.criteria.length > 0) {
+      program.maxMarks = program.criteria.reduce((sum, c) => sum + Number(c.maxMarks), 0);
+    }
+
+    await program.save();
+    res.json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const reorderCriteria = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { criteriaOrder } = req.body;
+
+    if (!Array.isArray(criteriaOrder)) {
+      return res.status(400).json({ message: "criteriaOrder must be an array of criterion IDs" });
+    }
+
+    const program = await Program.findById(id);
+    if (!program) return res.status(404).json({ message: "Program not found" });
+
+    const criteriaMap = new Map((program.criteria || []).map(c => [c._id.toString(), c]));
+    const reordered = [];
+
+    criteriaOrder.forEach((critId, index) => {
+      if (criteriaMap.has(critId)) {
+        const crit = criteriaMap.get(critId);
+        crit.position = index;
+        reordered.push(crit);
+        criteriaMap.delete(critId);
+      }
+    });
+
+    criteriaMap.forEach((crit) => {
+      crit.position = reordered.length;
+      reordered.push(crit);
+    });
+
+    program.criteria = reordered;
+    await program.save();
+    res.json(program);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getPrograms,
   createProgram,
@@ -542,4 +761,8 @@ module.exports = {
   addTopic,
   updateTopic,
   deleteTopic,
+  addCriterion,
+  updateCriterion,
+  deleteCriterion,
+  reorderCriteria,
 };
