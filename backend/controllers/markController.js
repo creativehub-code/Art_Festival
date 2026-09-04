@@ -166,7 +166,7 @@ const submitMark = async (req, res) => {
     // exact same mark for ALL other members so everyone's score stays in sync.
     const group = await ConversationPair.findOne({
       programId,
-      primaryParticipantId: participantId,
+      participants: participantId,
     });
     
     if (group && group.participants && group.participants.length > 1) {
@@ -341,7 +341,7 @@ const submitBatchMarks = async (req, res) => {
           const markData = marksByParticipant.get(pId);
           const group = await ConversationPair.findOne({
             programId,
-            primaryParticipantId: pId,
+            participants: pId,
           }).session(session);
 
           if (group && group.participants && group.participants.length > 1) {
@@ -460,6 +460,227 @@ const getMarksByProgram = async (req, res) => {
   }
 };
 
+// Helper function to recalculate ProgramResult, Participant.totalScore, and Team.totalScore
+const recalculateProgramScoresInternal = async (programId, session = null, options = {}) => {
+  const { force = false } = options;
+
+  const programQuery = Program.findById(programId);
+  if (session) programQuery.session(session);
+  const program = await programQuery;
+  if (!program) throw new Error("PROGRAM_NOT_FOUND");
+
+  const resultsExistQuery = ProgramResult.exists({ programId });
+  if (session) resultsExistQuery.session(session);
+  const resultsExist = await resultsExistQuery;
+
+  // If no ProgramResult exists and program status is not completed and force is false, skip recalculating ProgramResult
+  if (!resultsExist && program.status !== "completed" && !force) {
+    return { participantsUpdated: 0, teamsUpdated: 0, resultsAwarded: 0 };
+  }
+
+  // 1. Get all APPROVED marks for this program
+  const marksQuery = JudgeMark.find({ programId, status: "approved" });
+  if (session) marksQuery.session(session);
+  const marks = await marksQuery;
+
+  // 2. Clear old program results for this program
+  if (session) {
+    await ProgramResult.deleteMany({ programId }, { session });
+  } else {
+    await ProgramResult.deleteMany({ programId });
+  }
+
+  // 3. Enrich positionAwards with participantIds and teamId
+  let pairs = [];
+  if (program.isConversation) {
+    const pairsQuery = ConversationPair.find({ programId });
+    if (session) pairsQuery.session(session);
+    pairs = await pairsQuery;
+  }
+
+  // Aggregate marks for each participant or conversation pair unit in THIS program
+  const programScores = {};
+  if (program.isConversation && pairs.length > 0) {
+    const pIdToPrimary = {};
+    pairs.forEach(pair => {
+      const primStr = pair.primaryParticipantId.toString();
+      pair.participants.forEach(p => {
+        pIdToPrimary[p.toString()] = primStr;
+      });
+    });
+
+    const judgePairScores = {};
+    marks.forEach((mark) => {
+      const jId = mark.judgeId.toString();
+      const rawPId = mark.participantId.toString();
+      const primId = pIdToPrimary[rawPId] || rawPId;
+      const key = `${jId}_${primId}`;
+      judgePairScores[key] = mark.marksGiven || 0;
+    });
+
+    Object.entries(judgePairScores).forEach(([key, score]) => {
+      const [, primId] = key.split('_');
+      programScores[primId] = (programScores[primId] || 0) + score;
+    });
+  } else {
+    marks.forEach((mark) => {
+      const pId = mark.participantId.toString();
+      if (!programScores[pId]) programScores[pId] = 0;
+      programScores[pId] += mark.marksGiven || 0;
+    });
+  }
+
+  // 4. Sort participants by total marks in descending order (numeric sort)
+  const sortedParticipants = Object.keys(programScores).sort(
+    (a, b) => programScores[b] - programScores[a],
+  );
+
+  // 5. Fetch Points Settings
+  const settingsQuery = Setting.findOne();
+  if (session) settingsQuery.session(session);
+  let settings = await settingsQuery;
+  if (!settings) {
+    settings = {
+      firstPlacePoints: 5,
+      secondPlacePoints: 3,
+      thirdPlacePoints: 1,
+    };
+  }
+
+  // 6. Assign Positions and Points (Handling exact ties with Dense Ranking)
+  const positionAwards = [];
+  let currentPosition = 1;
+  let rankPoints = settings.firstPlacePoints;
+
+  for (let i = 0; i < sortedParticipants.length; i++) {
+    const pId = sortedParticipants[i];
+    const currentScore = programScores[pId];
+
+    if (i > 0) {
+      const prevPId = sortedParticipants[i - 1];
+      if (currentScore < programScores[prevPId]) {
+        currentPosition++; // Dense rank (e.g., 1, 1, 2, 3)
+      }
+    }
+
+    if (currentPosition === 1) rankPoints = settings.firstPlacePoints;
+    else if (currentPosition === 2) rankPoints = settings.secondPlacePoints;
+    else if (currentPosition === 3) rankPoints = settings.thirdPlacePoints;
+    else rankPoints = 0;
+
+    if (rankPoints > 0) {
+      positionAwards.push({
+        programId,
+        participantId: pId,
+        position: currentPosition,
+        positionPoints: rankPoints,
+      });
+    }
+  }
+
+  const partsQuery = Participant.find({ _id: { $in: sortedParticipants } });
+  if (session) partsQuery.session(session);
+  const participantDocs = await partsQuery;
+
+  const enrichedAwards = positionAwards.map(award => {
+    let participantIds = [award.participantId];
+    let teamId = null;
+
+    if (program.isConversation) {
+      const pair = pairs.find(p => p.primaryParticipantId.toString() === award.participantId.toString());
+      if (pair) {
+        participantIds = pair.participants.map(p => p.toString());
+        teamId = pair.teamId;
+      }
+    } else {
+      const part = participantDocs.find(p => p._id.toString() === award.participantId.toString());
+      if (part) {
+        teamId = part.teamId;
+      }
+    }
+
+    return {
+      ...award,
+      participantIds,
+      teamId,
+      isConversation: program.isConversation
+    };
+  });
+
+  if (enrichedAwards.length > 0) {
+    if (session) {
+      await ProgramResult.insertMany(enrichedAwards, { session });
+    } else {
+      await ProgramResult.insertMany(enrichedAwards);
+    }
+  }
+
+  // 7. Global Recalculation: Update totalScore for all participants in this program & affected IDs
+  const allProgramParticipantsQuery = Participant.find({ programs: programId }).select("_id teamId");
+  if (session) allProgramParticipantsQuery.session(session);
+  const allProgramParticipants = await allProgramParticipantsQuery;
+
+  const affectedParticipantIds = new Set(allProgramParticipants.map(p => p._id.toString()));
+  marks.forEach((mark) => affectedParticipantIds.add(mark.participantId.toString()));
+
+  if (program.isConversation) {
+    const pairsForAffectedQuery = ConversationPair.find({ programId });
+    if (session) pairsForAffectedQuery.session(session);
+    const pairsForAffected = await pairsForAffectedQuery;
+    pairsForAffected.forEach(pair => pair.participants.forEach(p => affectedParticipantIds.add(p.toString())));
+  }
+
+  const affectedTeamIds = new Set();
+
+  for (const partId of affectedParticipantIds) {
+    const resQuery = ProgramResult.find({
+      $or: [{ participantId: partId }, { participantIds: partId }]
+    });
+    if (session) resQuery.session(session);
+    const allResults = await resQuery;
+
+    const totalPositionScore = allResults.reduce(
+      (sum, r) => sum + (r.positionPoints || 0),
+      0,
+    );
+
+    const updatePartQuery = Participant.findByIdAndUpdate(
+      partId,
+      { totalScore: totalPositionScore },
+      { new: true }
+    );
+    if (session) updatePartQuery.session(session);
+    const updatedParticipant = await updatePartQuery;
+
+    if (updatedParticipant && updatedParticipant.teamId) {
+      affectedTeamIds.add(updatedParticipant.teamId.toString());
+    }
+  }
+
+  // 8. Global Recalculation: Update totalScore for each affected team
+  for (const teamId of affectedTeamIds) {
+    if (!teamId) continue;
+    const teamResQuery = ProgramResult.find({ teamId });
+    if (session) teamResQuery.session(session);
+    const teamResults = await teamResQuery;
+
+    const teamTotalScore = teamResults.reduce(
+      (sum, r) => sum + (r.positionPoints || 0),
+      0,
+    );
+
+    const updateTeamQuery = Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore });
+    if (session) updateTeamQuery.session(session);
+    await updateTeamQuery;
+  }
+
+  return {
+    participantsUpdated: affectedParticipantIds.size,
+    teamsUpdated: affectedTeamIds.size,
+    resultsAwarded: enrichedAwards.length,
+  };
+};
+
 // @desc    Calculate Scores and Update Totals (Admin Trigger)
 // @route   POST /api/marks/calculate/:programId
 const calculateScores = async (req, res) => {
@@ -470,164 +691,12 @@ const calculateScores = async (req, res) => {
     let responseData = null;
 
     await session.withTransaction(async () => {
-      // Fetch program to check if it's a conversation
-      const program = await Program.findById(programId).session(session);
-      if (!program) throw new Error("PROGRAM_NOT_FOUND");
+      const calcRes = await recalculateProgramScoresInternal(programId, session, { force: true });
 
-      // 1. Get all APPROVED marks for this program
-      const marks = await JudgeMark.find({ programId, status: "approved" }).session(session);
-
-      if (marks.length === 0) {
-        throw new Error("NO_MARKS_FOUND");
-      }
-
-      // 2. Clear old program results for this program if re-verifying
-      await ProgramResult.deleteMany({ programId }, { session });
-
-      // 3. Aggregate marks for each participant in THIS program
-      const programScores = {};
-      marks.forEach((mark) => {
-        const pId = mark.participantId.toString();
-        if (!programScores[pId]) programScores[pId] = 0;
-        programScores[pId] += mark.marksGiven || 0;
-      });
-
-      // 4. Sort participants by total marks in descending order
-      const sortedParticipants = Object.keys(programScores).sort(
-        (a, b) => programScores[b] - programScores[a],
-      );
-
-      // 5. Fetch Points Settings
-      let settings = await Setting.findOne().session(session);
-      if (!settings) {
-        settings = {
-          firstPlacePoints: 5,
-          secondPlacePoints: 3,
-          thirdPlacePoints: 1,
-        };
-      }
-
-      // 6. Assign Positions and Points (Handling exact ties)
-      const positionAwards = [];
-      let currentPosition = 1;
-      let rankPoints = settings.firstPlacePoints;
-
-      for (let i = 0; i < sortedParticipants.length; i++) {
-        const pId = sortedParticipants[i];
-        const currentScore = programScores[pId];
-
-        // Change position only if score is less than the previous person
-        if (i > 0) {
-          const prevPId = sortedParticipants[i - 1];
-          if (currentScore < programScores[prevPId]) {
-            currentPosition++; // Dense rank (e.g., 1, 1, 2, 3)
-          }
-        }
-
-        // Only top 3 true positions get points
-        if (currentPosition === 1) rankPoints = settings.firstPlacePoints;
-        else if (currentPosition === 2) rankPoints = settings.secondPlacePoints;
-        else if (currentPosition === 3) rankPoints = settings.thirdPlacePoints;
-        else rankPoints = 0;
-
-        if (rankPoints > 0) {
-          positionAwards.push({
-            programId,
-            participantId: pId,
-            position: currentPosition,
-            positionPoints: rankPoints,
-          });
-        }
-      }
-
-      // Enrich positionAwards with participantIds and teamId
-      let pairs = [];
-      if (program.isConversation) {
-        pairs = await ConversationPair.find({ programId }).session(session);
-      }
-      const participantDocs = await Participant.find({ _id: { $in: sortedParticipants } }).session(session);
-      
-      const enrichedAwards = positionAwards.map(award => {
-        let participantIds = [award.participantId];
-        let teamId = null;
-        
-        if (program.isConversation) {
-          const pair = pairs.find(p => p.primaryParticipantId.toString() === award.participantId.toString());
-          if (pair) {
-            participantIds = pair.participants.map(p => p.toString());
-            teamId = pair.teamId;
-          }
-        } else {
-          const part = participantDocs.find(p => p._id.toString() === award.participantId.toString());
-          if (part) {
-            teamId = part.teamId;
-          }
-        }
-        
-        return {
-          ...award,
-          participantIds,
-          teamId,
-          isConversation: program.isConversation
-        };
-      });
-
-      // Save the new program results
-      if (enrichedAwards.length > 0) {
-        await ProgramResult.insertMany(enrichedAwards, { session });
-      }
-
-      // 7. Global Recalculation: Update totalScore for each affected participant
-      // TotalScore = Sum of ALL Position Points (Judges marks are only for ranking)
-      const primaryAffectedIds = marks.map((mark) => mark.participantId.toString());
-      const affectedParticipantIds = new Set(primaryAffectedIds);
-      
-      if (program.isConversation) {
-        const pairsForAffected = await ConversationPair.find({ programId, primaryParticipantId: { $in: primaryAffectedIds } }).session(session);
-        pairsForAffected.forEach(pair => pair.participants.forEach(p => affectedParticipantIds.add(p.toString())));
-      }
-      
-      const affectedTeamIds = new Set();
-
-      for (const partId of affectedParticipantIds) {
-        const allResults = await ProgramResult.find({ 
-          $or: [{ participantId: partId }, { participantIds: partId }] 
-        }).session(session);
-        const totalPositionScore = allResults.reduce(
-          (sum, r) => sum + (r.positionPoints || 0),
-          0,
-        );
-
-        const finalScore = totalPositionScore;
-
-        // Update Participant
-        const updatedParticipant = await Participant.findByIdAndUpdate(
-          partId,
-          { totalScore: finalScore },
-          { new: true, session },
-        );
-
-        if (updatedParticipant && updatedParticipant.teamId) {
-          affectedTeamIds.add(updatedParticipant.teamId.toString());
-        }
-      }
-
-      // 8. Global Recalculation: Update totalScore for each affected team
-      for (const teamId of affectedTeamIds) {
-        if (!teamId) continue;
-        const teamResults = await ProgramResult.find({ teamId }).session(session);
-        const teamTotalScore = teamResults.reduce(
-          (sum, r) => sum + (r.positionPoints || 0),
-          0,
-        );
-
-        await Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore }, { session });
-      }
-
-      // 9. Update program status to completed
+      // Update program status to completed
       await Program.findByIdAndUpdate(programId, { status: "completed" }, { session });
 
-      // 10. Populate the position awards for the frontend results panel
+      // Populate position awards for frontend
       const populatedResults = await ProgramResult.find({ programId })
         .populate({ path: "participantIds", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
         .sort({ position: 1 })
@@ -635,10 +704,10 @@ const calculateScores = async (req, res) => {
 
       responseData = {
         message: "Scores & rankings recalculated successfully",
-        participantsUpdated: affectedParticipantIds.size,
-        teamsUpdated: affectedTeamIds.size,
-        resultsAwarded: enrichedAwards.length,
-        positionResults: populatedResults, // For the frontend results panel
+        participantsUpdated: calcRes.participantsUpdated,
+        teamsUpdated: calcRes.teamsUpdated,
+        resultsAwarded: calcRes.resultsAwarded,
+        positionResults: populatedResults,
       };
     });
 
@@ -918,11 +987,40 @@ const updateMarkStatus = async (req, res) => {
       return res.status(404).json({ message: "Mark not found." });
     }
 
+    const updateFields = { status };
+    if (status === "approved") {
+      updateFields.submitted = true;
+    }
+
     mark.status = status;
     if (status === "approved") {
       mark.submitted = true;
     }
     await mark.save();
+
+    // Group program auto-mirroring: if participant belongs to a ConversationPair group, update status for all members
+    const group = await ConversationPair.findOne({
+      programId: mark.programId,
+      participants: mark.participantId,
+    });
+
+    if (group && group.participants && group.participants.length > 1) {
+      const otherMemberIds = group.participants.filter(
+        (pId) => pId.toString() !== mark.participantId.toString()
+      );
+
+      await JudgeMark.updateMany(
+        {
+          judgeId: mark.judgeId,
+          programId: mark.programId,
+          participantId: { $in: otherMemberIds },
+        },
+        { $set: updateFields }
+      );
+    }
+
+    // Recalculate program scores and rankings if results exist or program is completed
+    await recalculateProgramScoresInternal(mark.programId);
 
     res.json({ message: `Mark ${status} successfully.`, mark });
   } catch (error) {
@@ -1009,6 +1107,38 @@ const editApprovedMark = async (req, res) => {
         mark.criteriaMarks = formattedCriteriaMarks;
       }
       updatedMark = await mark.save({ session });
+
+      // 3. Group program auto-mirroring: if participant belongs to a ConversationPair group, update all members
+      const group = await ConversationPair.findOne({
+        programId: mark.programId,
+        participants: mark.participantId,
+      }).session(session);
+
+      if (group && group.participants && group.participants.length > 1) {
+        const otherMemberIds = group.participants.filter(
+          (pId) => pId.toString() !== mark.participantId.toString()
+        );
+
+        const mirrorSet = { marksGiven: finalMarkValue };
+        if (formattedCriteriaMarks.length > 0) {
+          mirrorSet.criteriaMarks = formattedCriteriaMarks;
+        }
+
+        const mirrorOps = otherMemberIds.map((memberId) => ({
+          updateOne: {
+            filter: { judgeId: mark.judgeId, programId: mark.programId, participantId: memberId },
+            update: { $set: mirrorSet },
+            upsert: true,
+          },
+        }));
+
+        if (mirrorOps.length > 0) {
+          await JudgeMark.bulkWrite(mirrorOps, { session });
+        }
+      }
+
+      // 4. Recalculate program scores and rankings
+      await recalculateProgramScoresInternal(mark.programId, session);
     });
     res.json({ message: "Mark updated successfully", mark: updatedMark });
   } catch (error) {
@@ -1071,6 +1201,8 @@ const getReviewPrograms = async (req, res) => {
         groupId: p.groupId,
         isConversation: p.isConversation,
         maxMarks: p.maxMarks,
+        criteria: p.criteria || [],
+        criteriaEnabled: p.criteriaEnabled,
         participantCount: participantCountMap[pidStr] || 0,
         submittedCount: markStatsMap[pidStr] || 0,
         totalAssigned: programAssignmentMap[pidStr] ? programAssignmentMap[pidStr].size : 0,

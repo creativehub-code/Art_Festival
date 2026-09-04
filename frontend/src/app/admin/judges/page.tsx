@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest } from '@/lib/api';
-import { Plus, Trash2, Users, X, UserMinus, Edit3, Globe, KeyRound } from 'lucide-react';
-import { usePrograms, useJudgeGroups, useJudges, useLanguages, useInvalidate } from '@/lib/queries';
+import { Plus, Trash2, Users, X, UserMinus, Edit3, Globe, ChevronDown, Layers } from 'lucide-react';
+import { usePrograms, useJudgeGroups, useLanguages, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -11,7 +11,6 @@ import { useToast } from '@/lib/useToast';
 export default function JudgeGroupsPage() {
   const { data: programs = [] as any[] } = usePrograms();
   const { data: judgeGroups = [] as any[] } = useJudgeGroups();
-  const { data: allJudges = [] as any[] } = useJudges();
   const { data: dbLanguages = [] as any[] } = useLanguages();
   const judgeCategories = dbLanguages.map(l => l.name);
   const { invalidateJudgeGroups, invalidateJudges } = useInvalidate();
@@ -21,6 +20,11 @@ export default function JudgeGroupsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+
+  const toggleExpand = (id: string) => {
+    setExpandedGroupId(prev => (prev === id ? null : id));
+  };
 
   // Form State
   const [groupName, setGroupName] = useState('');
@@ -188,172 +192,165 @@ export default function JudgeGroupsPage() {
       </div>
 
       {judgeGroups.length === 0 ? (
-        <div className="text-gray-500">Loading judge groups...</div>
+        <div className="text-gray-500 text-center py-12">Loading judge groups...</div>
       ) : (
-        <div className="grid lg:grid-cols-2 gap-6 relative z-10">
-          {judgeGroups.filter(g => g.name.toLowerCase().includes(panelSearchQ.toLowerCase())).map((group) => (
-            <div 
-              key={group._id} 
-              className="group relative bg-[#13111C]/80 backdrop-blur-xl p-6 rounded-2xl border border-white/5 hover:border-purple-500/30 transition-all duration-300 hover:shadow-2xl hover:shadow-purple-900/20 hover:-translate-y-1 overflow-hidden"
-            >
-              {/* Decorative side accent */}
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-pink-500 opacity-50 group-hover:opacity-100 transition-opacity duration-300" />
-              
-              <div className="flex justify-between items-start mb-6 pb-4 border-b border-white/5">
-                <div>
-                    <h3 className="text-2xl font-bold text-white mb-2 tracking-tight group-hover:text-purple-300 transition-colors duration-300">{group.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-gray-400 bg-white/5 px-3 py-1 rounded-full w-fit">
-                        <Users size={14} className="text-purple-400" /> 
-                        <span className="font-medium text-gray-300">{group.judges?.length || 0} Judges</span>
-                    </div>
-                </div>
-                <button 
-                    onClick={() => handleDeleteGroup(group._id)}
-                    className="p-2.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all duration-200"
-                    title="Delete Group"
+        <div className="space-y-3.5 relative z-10">
+          {judgeGroups
+            .filter(g => g.name.toLowerCase().includes(panelSearchQ.toLowerCase()))
+            .map((group) => {
+              const isExpanded = expandedGroupId === group._id;
+              const judgesCount = group.judges?.length || 0;
+              const programsCount = group.assignedPrograms?.length || 0;
+
+              return (
+                <div 
+                  key={group._id} 
+                  className={`group relative bg-[#13111C]/90 backdrop-blur-xl rounded-2xl border transition-all duration-200 overflow-hidden cursor-pointer ${
+                    isExpanded 
+                      ? 'border-purple-500/40 shadow-xl shadow-purple-900/10 bg-[#161324]' 
+                      : 'border-white/5 hover:border-purple-500/30 hover:bg-[#161324]/60 shadow-sm'
+                  }`}
+                  onClick={() => toggleExpand(group._id)}
                 >
-                    <Trash2 size={20} />
-                </button>
-              </div>
-              
-              <div className="grid md:grid-cols-2 gap-8">
-                  {/* Judges List */}
-                  <div>
-                      <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-purple-500" /> Panel Members
-                      </h4>
-                      <div className="space-y-3">
-                          {group.judges?.map((judge: any) => (
-                              <div key={judge._id} className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
-                                  <div className="w-10 h-10 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center shrink-0">
-                                      <Users size={16} />
-                                  </div>
-                                  <div className="flex flex-col min-w-0">
-                                      <span className="text-sm font-bold text-gray-200 truncate">{judge.name}</span>
-                                      <span className="text-[11px] text-gray-400 truncate">{judge.email}</span>
-                                  </div>
-                              </div>
-                          ))}
-                          {(!group.judges || group.judges.length === 0) && (
-                              <div className="text-sm text-gray-500 italic p-4 bg-white/5 rounded-xl border border-white/5 text-center">No judges assigned</div>
-                          )}
+                  {/* Decorative side accent bar */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-pink-500 transition-opacity duration-200 ${
+                    isExpanded ? 'opacity-100' : 'opacity-40 group-hover:opacity-100'
+                  }`} />
+
+                  {/* Summary Bar (Default Collapsed State) */}
+                  <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    {/* Left: Group Info */}
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                        <Users size={18} />
                       </div>
+                      <div className="min-w-0">
+                        <h3 className="text-lg font-bold text-white tracking-tight group-hover:text-purple-300 transition-colors truncate">
+                          {group.name}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <span className="inline-flex items-center gap-1.5 text-xs text-gray-300 bg-white/5 px-2.5 py-0.5 rounded-full border border-white/5 font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                            {judgesCount} {judgesCount === 1 ? 'Judge' : 'Judges'}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 text-xs text-pink-300 bg-pink-500/10 px-2.5 py-0.5 rounded-full border border-pink-500/20 font-medium">
+                            <Layers size={12} className="text-pink-400" />
+                            {programsCount} {programsCount === 1 ? 'Program assigned' : 'Programs assigned'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right: Action Buttons & Expand Icon */}
+                    <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0" onClick={e => e.stopPropagation()}>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); openEditModal(group); }}
+                        className="text-xs bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-white/5"
+                        title="Edit Assigned Programs"
+                      >
+                        <Edit3 size={13} className="text-pink-400" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group._id); }}
+                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
+                        title="Delete Group"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+
+                      <button 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleExpand(group._id); }}
+                        className="p-1.5 text-gray-400 group-hover:text-purple-300 rounded-lg hover:bg-white/5 transition-all"
+                        aria-label={isExpanded ? "Collapse panel" : "Expand panel"}
+                      >
+                        <ChevronDown size={18} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180 text-purple-400' : ''}`} />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Assigned Programs */}
-                  <div>
-                      <div className="flex justify-between items-center mb-4">
-                          <h4 className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-pink-500" /> Assigned Programs
+                  {/* Expanded Content Drawer */}
+                  {isExpanded && (
+                    <div className="px-5 pb-5 pt-2 border-t border-white/5 space-y-5 animate-in fade-in slide-in-from-top-2 duration-200 cursor-default" onClick={e => e.stopPropagation()}>
+                      <div className="grid md:grid-cols-2 gap-6 pt-2">
+                        {/* Panel Members List */}
+                        <div>
+                          <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-purple-500" /> Panel Members ({judgesCount})
                           </h4>
-                          <button 
-                              onClick={() => openEditModal(group)}
-                              className="text-xs bg-white/5 hover:bg-white/10 text-gray-300 font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors border border-white/5"
-                          >
-                              <Edit3 size={12} className="text-pink-400" /> Edit
-                          </button>
-                      </div>
-                      <div className="flex flex-wrap gap-2 auto-rows-max">
-                          {group.assignedPrograms?.map((p: any) => (
-                              <div key={p._id} className="flex items-center gap-2 bg-pink-500/10 border border-pink-500/20 pl-2.5 pr-3 py-1.5 rounded-full shadow-sm hover:bg-pink-500/20 transition-colors cursor-default">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-pink-400" />
-                                  <span className="text-xs font-semibold text-pink-200 tracking-wide">
-                                      {p.name}
-                                  </span>
+                          <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                            {group.judges?.map((judge: any) => (
+                              <div key={judge._id} className="flex items-center gap-3 bg-white/5 p-2.5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
+                                <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center shrink-0 font-bold text-xs">
+                                  {judge.name ? judge.name.charAt(0).toUpperCase() : <Users size={14} />}
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-xs font-bold text-gray-200 truncate">{judge.name}</span>
+                                  <span className="text-[10px] text-gray-400 truncate">{judge.email}</span>
+                                </div>
                               </div>
-                          ))}
-                          {(!group.assignedPrograms || group.assignedPrograms.length === 0) && (
-                              <div className="text-sm text-gray-500 italic p-4 bg-white/5 rounded-xl border border-white/5 text-center w-full">No programs assigned</div>
-                          )}
+                            ))}
+                            {(!group.judges || group.judges.length === 0) && (
+                              <div className="text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center font-medium">
+                                Judges Not Assigned
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Assigned Programs List */}
+                        <div>
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-pink-500" /> Assigned Programs ({programsCount})
+                            </h4>
+                          </div>
+                          <div className="max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                            <div className="flex flex-wrap gap-2">
+                              {group.assignedPrograms?.map((p: any) => (
+                                <div key={p._id} className="flex items-center gap-1.5 bg-pink-500/10 border border-pink-500/20 px-3 py-1 rounded-full shadow-sm hover:bg-pink-500/20 transition-colors cursor-default">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-pink-400" />
+                                  <span className="text-xs font-semibold text-pink-200 tracking-wide truncate max-w-[220px]">
+                                    {p.name}
+                                  </span>
+                                </div>
+                              ))}
+                              {(!group.assignedPrograms || group.assignedPrograms.length === 0) && (
+                                <div className="text-xs text-gray-500 italic p-3 bg-white/5 rounded-xl border border-white/5 text-center w-full">
+                                  No Programs Assigned
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                  </div>
-              </div>
-            </div>
-          ))}
-          {judgeGroups.length === 0 && (
-            <div className="lg:col-span-2 text-center p-16 bg-[#13111C]/50 rounded-3xl border border-dashed border-gray-800 relative overflow-hidden group">
-                <div className="absolute inset-0 bg-gradient-to-t from-purple-900/10 to-transparent pointer-events-none" />
-                <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-6 border border-gray-800 group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
-                    <Users size={32} className="text-purple-500" />
+                    </div>
+                  )}
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-2">No judge panels yet</h3>
-                <p className="text-gray-400 max-w-sm mx-auto mb-8">Create your first panel of judges to assign them specific programs for marking.</p>
+              );
+            })}
+
+          {judgeGroups.length === 0 && (
+            <div className="text-center p-12 bg-[#13111C]/50 rounded-3xl border border-dashed border-gray-800 relative overflow-hidden group">
+                <div className="absolute inset-0 bg-gradient-to-t from-purple-900/10 to-transparent pointer-events-none" />
+                <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-800 group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
+                    <Users size={28} className="text-purple-500" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">No judge panels yet</h3>
+                <p className="text-gray-400 text-sm max-w-sm mx-auto mb-6">Create your first panel of judges to assign them specific programs for marking.</p>
                 <button 
                     onClick={() => setShowModal(true)}
-                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white px-6 py-3 rounded-full font-bold transition-all duration-300 inline-flex items-center gap-2"
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white px-5 py-2.5 rounded-full text-sm font-bold transition-all duration-300 inline-flex items-center gap-2"
                 >
-                    <Plus size={18} className="text-purple-400" />
+                    <Plus size={16} className="text-purple-400" />
                     Create First Panel
                 </button>
             </div>
           )}
         </div>
       )}
-
-      {/* ── Individual Judges Section ── */}
-      <div className="mt-12">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-blue-500/20 border border-blue-500/20 rounded-xl">
-            <Globe size={20} className="text-blue-400" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-white">Individual Judges by Language</h2>
-            <p className="text-gray-500 text-sm">Judges seeded with username/password credentials</p>
-          </div>
-          <div className="ml-auto text-xs bg-blue-500/10 border border-blue-500/20 text-blue-400 px-3 py-1.5 rounded-full font-bold">
-            {allJudges.length} judges
-          </div>
-        </div>
-
-        {allJudges.length === 0 ? (
-          <div className="text-gray-500 text-center py-8">Loading judges...</div>
-        ) : allJudges.filter(j => j.username).length === 0 ? (
-          <div className="text-center py-12 bg-[#13111C]/50 rounded-2xl border border-dashed border-gray-800">
-            <Globe size={28} className="mx-auto mb-3 text-gray-600" />
-            <p className="text-gray-500">No individual judges found.</p>
-          </div>
-        ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {judgeCategories.map(lang => {
-              const langJudges = allJudges.filter(j => j.category === lang && j.username);
-              if (langJudges.length === 0) return null;
-              const langColors: Record<string, string> = {
-                Malayalam: 'from-purple-500/20 to-purple-900/5 border-purple-500/20 text-purple-400',
-                English: 'from-blue-500/20 to-blue-900/5 border-blue-500/20 text-blue-400',
-                Urdu: 'from-green-500/20 to-green-900/5 border-green-500/20 text-green-400',
-                Arabic: 'from-orange-500/20 to-orange-900/5 border-orange-500/20 text-orange-400',
-              };
-              const cls = langColors[lang] || 'from-gray-500/20 to-gray-900/5 border-gray-500/20 text-gray-400';
-              return (
-                <div key={lang} className={"bg-gradient-to-b " + cls.replace('text-', 'border-').split(' ').filter(c => c.startsWith('from') || c.startsWith('to') || c.startsWith('border')).join(' ') + " border rounded-2xl p-4 bg-[#13111C]"}
-                  style={{background: 'rgba(19,17,28,0.8)', border: '1px solid rgba(255,255,255,0.06)'}}>
-                  <div className="flex items-center gap-2 mb-4 pb-3 border-b border-white/5">
-                    <Globe size={14} className={cls.split(' ').find(c => c.startsWith('text-')) || 'text-gray-400'} />
-                    <h3 className={"font-bold text-sm " + (cls.split(' ').find(c => c.startsWith('text-')) || 'text-gray-400')}>{lang}</h3>
-                    <span className="ml-auto text-[10px] bg-white/5 text-gray-400 px-1.5 py-0.5 rounded-full border border-white/5">{langJudges.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {langJudges.map((judge: any) => (
-                      <div key={judge._id} className="flex items-center gap-3 bg-white/5 hover:bg-white/10 transition-colors rounded-xl p-3 border border-white/5">
-                        <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center shrink-0 text-white font-bold text-sm border border-white/10">
-                          {judge.name.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-gray-200 truncate">{judge.name}</p>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <KeyRound size={10} className="text-gray-500" />
-                            <span className="text-[11px] text-gray-500 font-mono">{judge.username}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
       {/* Create Modal */}
       {showModal && (

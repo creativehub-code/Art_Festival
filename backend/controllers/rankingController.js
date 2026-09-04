@@ -62,11 +62,17 @@ const getIndividualRankings = async (req, res) => {
       .select("-image -programs") // Keep it lightweight
       .lean();
 
-    // The rank for each participant is their index in the global sorted dataset: skip + index + 1
-    const rankedParticipants = participants.map((p, index) => ({
-      ...p,
-      rank: skip + index + 1
-    }));
+    // Fetch distinct totalScores matching filter for exact dense ranking calculation
+    const distinctScores = await Participant.distinct("totalScore", filter);
+    distinctScores.sort((a, b) => b - a);
+
+    const rankedParticipants = participants.map((p) => {
+      const higherCount = distinctScores.filter((s) => s > (p.totalScore || 0)).length;
+      return {
+        ...p,
+        rank: higherCount + 1
+      };
+    });
 
     res.json({
       participants: rankedParticipants,
