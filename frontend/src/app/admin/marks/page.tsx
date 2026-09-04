@@ -84,10 +84,14 @@ export default function MarksReviewPage() {
               await apiRequest(`/marks/${markId}/status`, 'PATCH', { status });
               addToast({ judgeName: 'System', programName: `Mark ${status} successfully`, language: '' });
           }
-          // Targeted cache invalidation — only refresh the current program's marks
+          // Targeted cache invalidation
           if (selectedProgram) {
             invalidateReviewProgramMarks(selectedProgram);
           }
+          invalidateReviewPrograms();
+          invalidateIndividualRankings();
+          invalidateParticipants();
+          invalidateTeams();
       } catch (e: any) {
           addToast({ title: 'Mark Action Failed', message: e.message, type: 'error' });
       }
@@ -628,13 +632,13 @@ export default function MarksReviewPage() {
 
                     <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
                         <div className="col-span-3">Participant</div>
-                        <div className={assignedJudges.length > 0 ? "col-span-6 flex justify-between px-4" : "col-span-6"}>
+                        <div className={assignedJudges.length > 0 ? "col-span-6 flex justify-between px-4" : "col-span-6 text-center"}>
                             {assignedJudges.length > 0 ? (
                                 assignedJudges.map((judge: any) => (
                                     <div key={judge._id} className="text-center flex-1">{judge.name}</div>
                                 ))
                             ) : (
-                                "Judges' Breakdown"
+                                "Judges Not Assigned"
                             )}
                         </div>
                         <div className="col-span-2 text-center">Total Score</div>
@@ -1025,36 +1029,70 @@ function MarkDetailModal({
   if (!detail) return null;
 
   const { mark, participant, judgeName, program } = detail;
-  const programCriteria = program?.criteria || [];
   const markCriteria = mark.criteriaMarks || [];
-  const hasCriteria = programCriteria.length > 0 || markCriteria.length > 0;
+  
+  // Resolve effective criteria list from program configuration or mark fallback
+  const rawProgramCriteria = program?.criteria || [];
+  const programCriteria = useMemo(() => {
+    if (rawProgramCriteria.length > 0) return rawProgramCriteria;
+    if (markCriteria.length > 0) {
+      return markCriteria.map((cm: any) => ({
+        _id: cm.criterionId?._id ? String(cm.criterionId._id) : (cm.criterionId ? String(cm.criterionId) : cm.title),
+        title: cm.title || 'Criterion',
+        maxMarks: cm.maxMarks || '-',
+      }));
+    }
+    return [];
+  }, [rawProgramCriteria, markCriteria]);
+
+  const hasCriteria = Boolean(program?.criteriaEnabled || programCriteria.length > 0 || markCriteria.length > 0);
 
   const [showDetails, setShowDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [criteriaInputs, setCriteriaInputs] = useState<Record<string, number>>(() => {
-    const map: Record<string, number> = {};
-    if (markCriteria.length > 0) {
-      markCriteria.forEach((cm: any) => {
-        const cId = cm.criterionId?._id || cm.criterionId;
-        map[cId] = cm.marksGiven;
+
+  // Initialize input state for criterion editing
+  const [criteriaInputs, setCriteriaInputs] = useState<Record<string, number | ''>>(() => {
+    const map: Record<string, number | ''> = {};
+    programCriteria.forEach((crit: any) => {
+      const critIdStr = String(crit._id);
+      const existing = markCriteria.find((cm: any) => {
+        const cId = cm.criterionId?._id ? String(cm.criterionId._id) : (cm.criterionId ? String(cm.criterionId) : null);
+        if (cId && cId === critIdStr) return true;
+        if (cm.title && crit.title && cm.title.trim().toLowerCase() === crit.title.trim().toLowerCase()) return true;
+        return false;
       });
-    }
+
+      if (existing && existing.marksGiven !== undefined && existing.marksGiven !== null) {
+        map[critIdStr] = Number(existing.marksGiven);
+      } else {
+        map[critIdStr] = '';
+      }
+    });
     return map;
   });
+
   const [totalInput, setTotalInput] = useState<number>(mark.mark || 0);
   const [reasonInput, setReasonInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Automatically calculate total from individual criterion inputs
   const calculatedCriteriaTotal = useMemo(() => {
-    if (!hasCriteria) return totalInput;
-    return Object.values(criteriaInputs).reduce((sum, val) => sum + (Number(val) || 0), 0);
-  }, [criteriaInputs, hasCriteria, totalInput]);
+    if (!hasCriteria || programCriteria.length === 0) return totalInput;
+    return Object.values(criteriaInputs).reduce<number>((sum, val) => {
+      const num = Number(val);
+      return sum + (isNaN(num) ? 0 : num);
+    }, 0);
+  }, [criteriaInputs, hasCriteria, programCriteria, totalInput]);
 
-  const handleCriterionChange = (cId: string, valStr: string, maxVal: number) => {
+  const handleCriterionChange = (critIdStr: string, valStr: string) => {
+    if (valStr === '') {
+      setCriteriaInputs(prev => ({ ...prev, [critIdStr]: '' }));
+      return;
+    }
     const val = Number(valStr);
-    if (isNaN(val) || val < 0 || val > maxVal) return;
-    setCriteriaInputs(prev => ({ ...prev, [cId]: val }));
+    if (isNaN(val)) return;
+    setCriteriaInputs(prev => ({ ...prev, [critIdStr]: val }));
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -1064,30 +1102,67 @@ function MarkDetailModal({
       return;
     }
 
-    setIsSaving(true);
-    setErrorMsg('');
-    try {
-      if (hasCriteria) {
+    if (hasCriteria && programCriteria.length > 0) {
+      // Validate every criterion
+      for (const c of programCriteria) {
+        const critIdStr = String(c._id);
+        const val = criteriaInputs[critIdStr];
+        if (val === '' || val === undefined || val === null || isNaN(Number(val))) {
+          setErrorMsg(`Please enter a valid mark for criterion "${c.title}".`);
+          return;
+        }
+        const numVal = Number(val);
+        if (numVal < 0) {
+          setErrorMsg(`Mark for criterion "${c.title}" cannot be negative.`);
+          return;
+        }
+        if (typeof c.maxMarks === 'number' && numVal > c.maxMarks) {
+          setErrorMsg(`Mark for criterion "${c.title}" (${numVal}) cannot exceed maximum mark of ${c.maxMarks}.`);
+          return;
+        }
+      }
+
+      setIsSaving(true);
+      setErrorMsg('');
+      try {
         const criteriaMarksPayload = programCriteria.map((c: any) => ({
-          criterionId: c._id,
+          criterionId: String(c._id),
           title: c.title,
-          marksGiven: Number(criteriaInputs[c._id] || 0),
+          marksGiven: Number(criteriaInputs[String(c._id)]),
         }));
         await onSaveEdit(mark.id, {
           criteriaMarks: criteriaMarksPayload,
           reason: reasonInput.trim(),
         });
-      } else {
+        onClose();
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Failed to save edit.');
+      } finally {
+        setIsSaving(false);
+      }
+    } else {
+      if (isNaN(totalInput) || totalInput < 0) {
+        setErrorMsg('Total mark must be a non-negative number.');
+        return;
+      }
+      if (program?.maxMarks && totalInput > program.maxMarks) {
+        setErrorMsg(`Total mark cannot exceed maximum mark of ${program.maxMarks}.`);
+        return;
+      }
+
+      setIsSaving(true);
+      setErrorMsg('');
+      try {
         await onSaveEdit(mark.id, {
           newMark: Number(totalInput),
           reason: reasonInput.trim(),
         });
+        onClose();
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Failed to save edit.');
+      } finally {
+        setIsSaving(false);
       }
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to save edit.');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -1098,10 +1173,12 @@ function MarkDetailModal({
         <div className="p-5 border-b border-[#2D283E] flex justify-between items-start bg-[#13111C]">
           <div>
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-xs font-bold">
-                #{participant?.chestNumber || 'N/A'}
-              </span>
-              <h3 className="text-base font-bold text-white">{participant?.name}</h3>
+              {participant?.chestNumber && (
+                <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-xs font-bold">
+                  #{participant.chestNumber}
+                </span>
+              )}
+              <h3 className="text-base font-bold text-white">{participant?.name || 'Participant Evaluation'}</h3>
             </div>
             <p className="text-xs text-gray-400 mt-1">
               Evaluated by <span className="text-purple-300 font-bold">{judgeName}</span> ({program?.name})
@@ -1109,14 +1186,15 @@ function MarkDetailModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+            title="Close"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Modal Content */}
-        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+        {/* Modal Body */}
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
           {errorMsg && (
             <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-xl font-medium">
               {errorMsg}
@@ -1124,48 +1202,74 @@ function MarkDetailModal({
           )}
 
           {!isEditing ? (
-            /* Detailed Breakdown View */
+            /* Detailed Breakdown View Mode */
             <div className="space-y-4">
-              <div className="p-3.5 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
+              {/* Total Score Summary Card */}
+              <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
                 <div>
                   <span className="text-xs font-bold uppercase tracking-wider text-purple-300 block">Total Score</span>
                   <span className="text-[10px] text-gray-400 font-medium">Evaluated Mark</span>
                 </div>
-                <span className="font-mono text-xl font-bold text-white">
-                  {mark.mark} / {program?.maxMarks || 100}
+                <span className="font-mono text-2xl font-black text-white">
+                  {mark.mark} <span className="text-gray-400 text-sm font-normal">/ {program?.maxMarks || 100}</span>
                 </span>
               </div>
 
               {hasCriteria ? (
                 <div className="space-y-2">
+                  {/* Collapsible Trigger */}
                   <button
                     type="button"
                     onClick={() => setShowDetails(!showDetails)}
-                    className="w-full flex items-center justify-between p-2.5 bg-[#13111C] border border-gray-800 hover:border-gray-700 rounded-xl text-xs font-bold text-gray-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 bg-[#13111C] border border-gray-800 hover:border-purple-500/40 rounded-xl text-xs font-bold text-gray-300 transition-all group"
                   >
-                    <span className="flex items-center gap-1.5 text-purple-300">
-                      <ChevronDown size={14} className={`transition-transform ${showDetails ? 'rotate-180' : ''}`} />
-                      {showDetails ? 'Hide Criteria Details' : '▼ Details (Criteria Breakdown)'}
+                    <span className="flex items-center gap-2 text-purple-300">
+                      <ChevronDown size={16} className={`transition-transform duration-200 ${showDetails ? 'rotate-180 text-purple-400' : ''}`} />
+                      <span>Detailed Criteria Details</span>
                     </span>
-                    <span className="text-[10px] text-gray-500 font-mono">
-                      {(programCriteria.length || markCriteria.length)} items
+                    <span className="text-[10px] text-gray-500 font-mono bg-white/5 px-2.5 py-0.5 rounded-full border border-white/5">
+                      {programCriteria.length} criteria
                     </span>
                   </button>
 
+                  {/* Expanded Criteria Breakdown */}
                   {showDetails && (
-                    <div className="bg-[#13111C] rounded-xl border border-gray-800 overflow-hidden divide-y divide-gray-800 animate-in fade-in duration-200">
+                    <div className="bg-[#13111C] rounded-xl border border-gray-800 overflow-hidden divide-y divide-gray-800/60 animate-in fade-in duration-200">
                       {programCriteria.map((crit: any) => {
-                        const critMark = markCriteria.find((cm: any) => (cm.criterionId?._id || cm.criterionId) === crit._id) || criteriaInputs[crit._id];
-                        const scoreVal = typeof critMark === 'object' ? critMark?.marksGiven : (critMark !== undefined ? critMark : 0);
+                        const critIdStr = String(crit._id);
+                        const cm = markCriteria.find((item: any) => {
+                          const cId = item.criterionId?._id ? String(item.criterionId._id) : (item.criterionId ? String(item.criterionId) : null);
+                          if (cId && cId === critIdStr) return true;
+                          if (item.title && crit.title && item.title.trim().toLowerCase() === crit.title.trim().toLowerCase()) return true;
+                          return false;
+                        });
+
+                        const hasValue = cm && cm.marksGiven !== undefined && cm.marksGiven !== null;
+                        const scoreDisplay = hasValue ? cm.marksGiven : '-';
+
                         return (
-                          <div key={crit._id} className="p-3 flex justify-between items-center text-xs">
-                            <span className="font-medium text-gray-300">{crit.title}</span>
-                            <span className="font-mono font-bold text-white">
-                              <span className="text-purple-300">{scoreVal}</span> / {crit.maxMarks}
-                            </span>
+                          <div key={crit._id} className="p-3.5 flex justify-between items-center text-xs">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-gray-200">{crit.title}</span>
+                              <span className="text-[10px] text-gray-500 font-medium">Judge Mark</span>
+                            </div>
+                            <div className="font-mono font-bold text-white text-sm">
+                              <span className={hasValue ? "text-purple-300 font-black" : "text-gray-500"}>
+                                {scoreDisplay}
+                              </span>
+                              <span className="text-gray-500 font-normal text-xs ml-1">/ {crit.maxMarks}</span>
+                            </div>
                           </div>
                         );
                       })}
+
+                      {/* Total Breakdown Row */}
+                      <div className="p-3.5 bg-purple-500/5 flex justify-between items-center text-xs font-bold border-t border-purple-500/20">
+                        <span className="text-purple-300 uppercase tracking-wider text-[11px]">Total</span>
+                        <span className="font-mono text-sm text-white font-black">
+                          {mark.mark} <span className="text-gray-400 text-xs font-normal">/ {program?.maxMarks || 100}</span>
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1179,44 +1283,60 @@ function MarkDetailModal({
                 <button
                   type="button"
                   onClick={() => setIsEditing(true)}
-                  className="w-full py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold text-xs rounded-xl border border-blue-500/30 transition-colors flex items-center justify-center gap-1.5"
+                  className="w-full py-3 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 font-bold text-xs rounded-xl border border-blue-500/30 transition-all flex items-center justify-center gap-2 shadow-sm"
                 >
-                  <Edit size={14} /> Edit Approved Mark
+                  <Edit size={15} /> Edit Approved Mark
                 </button>
               )}
             </div>
           ) : (
-            /* Editing View */
+            /* Editing View Mode */
             <form onSubmit={handleSave} className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-blue-300">
-                Edit Mark Breakdown
-              </h4>
+              <div className="flex items-center justify-between pb-2 border-b border-gray-800">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-blue-300 flex items-center gap-2">
+                  <Edit size={14} /> Edit Evaluation
+                </h4>
+                <span className="text-[10px] text-gray-500 font-mono">
+                  {hasCriteria ? 'Criteria-wise Marking' : 'Total Mark Only'}
+                </span>
+              </div>
 
-              {hasCriteria ? (
-                <div className="space-y-2">
+              {hasCriteria && programCriteria.length > 0 ? (
+                <div className="space-y-3">
                   {programCriteria.map((crit: any) => {
-                    const currentVal = criteriaInputs[crit._id] !== undefined ? criteriaInputs[crit._id] : 0;
+                    const critIdStr = String(crit._id);
+                    const currentVal = criteriaInputs[critIdStr];
                     return (
-                      <div key={crit._id} className="flex items-center justify-between p-2.5 bg-[#13111C] rounded-xl border border-gray-800">
-                        <span className="text-xs font-medium text-gray-300">{crit.title}</span>
-                        <div className="flex items-center gap-1.5">
+                      <div key={crit._id} className="flex items-center justify-between p-3 bg-[#13111C] rounded-xl border border-gray-800 hover:border-gray-700 transition-colors">
+                        <div>
+                          <span className="text-xs font-bold text-gray-200 block">{crit.title}</span>
+                          <span className="text-[10px] text-gray-500">Max Mark: {crit.maxMarks}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
                           <input
                             type="number"
                             min="0"
                             max={crit.maxMarks}
+                            step="any"
                             value={currentVal}
-                            onChange={(e) => handleCriterionChange(crit._id, e.target.value, crit.maxMarks)}
-                            className="w-16 bg-[#0B0914] border border-gray-700 focus:border-purple-500 text-center font-mono text-white text-xs p-1.5 rounded-lg outline-none"
+                            onChange={(e) => handleCriterionChange(critIdStr, e.target.value)}
+                            className="w-20 bg-[#0B0914] border border-gray-700 focus:border-purple-500 text-center font-mono text-white text-sm p-2 rounded-lg outline-none transition-colors"
+                            placeholder="0"
                           />
-                          <span className="text-xs text-gray-500 font-mono">/ {crit.maxMarks}</span>
+                          <span className="text-xs text-gray-400 font-mono font-bold">/ {crit.maxMarks}</span>
                         </div>
                       </div>
                     );
                   })}
-                  <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-300">Calculated New Total:</span>
-                    <span className="font-mono text-base font-bold text-white">
-                      {calculatedCriteriaTotal} / {program?.maxMarks}
+
+                  {/* Dynamic Calculated Total */}
+                  <div className="p-3.5 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-purple-300 block">Calculated Total</span>
+                      <span className="text-[10px] text-gray-400">Sum of criteria marks</span>
+                    </div>
+                    <span className="font-mono text-lg font-black text-white">
+                      {calculatedCriteriaTotal} <span className="text-gray-400 text-xs font-normal">/ {program?.maxMarks || 100}</span>
                     </span>
                   </div>
                 </div>
@@ -1227,24 +1347,26 @@ function MarkDetailModal({
                     <input
                       type="number"
                       min="0"
-                      max={program?.maxMarks}
+                      max={program?.maxMarks || 100}
                       value={totalInput}
                       onChange={(e) => setTotalInput(Number(e.target.value))}
                       className="w-full bg-[#13111C] border border-gray-700 focus:border-purple-500 font-mono text-white text-sm p-2.5 rounded-xl outline-none"
                     />
-                    <span className="text-xs text-gray-500 font-mono">/ {program?.maxMarks}</span>
+                    <span className="text-xs text-gray-400 font-mono font-bold">/ {program?.maxMarks || 100}</span>
                   </div>
                 </div>
               )}
 
               <div>
-                <label className="text-xs text-gray-400 font-bold uppercase block mb-1">Reason for Change (Audit Log)</label>
+                <label className="text-xs text-gray-400 font-bold uppercase block mb-1">
+                  Reason for Change <span className="text-red-400">*</span>
+                </label>
                 <textarea
                   rows={2}
-                  placeholder="e.g., Re-evaluated criteria score upon admin review"
+                  placeholder="Required reason for audit log (e.g., Criteria re-evaluation after admin review)"
                   value={reasonInput}
                   onChange={(e) => setReasonInput(e.target.value)}
-                  className="w-full bg-[#13111C] border border-gray-700 focus:border-purple-500 text-white text-xs p-2.5 rounded-xl outline-none"
+                  className="w-full bg-[#13111C] border border-gray-700 focus:border-purple-500 text-white text-xs p-2.5 rounded-xl outline-none placeholder-gray-600"
                   required
                 />
               </div>
@@ -1252,17 +1374,17 @@ function MarkDetailModal({
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsEditing(false)}
+                  onClick={() => { setIsEditing(false); setErrorMsg(''); }}
                   className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-bold rounded-xl transition-colors"
                 >
-                  Back
+                  Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1.5 font-bold"
                 >
-                  {isSaving ? 'Saving...' : 'Save & Update Mark'}
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>
