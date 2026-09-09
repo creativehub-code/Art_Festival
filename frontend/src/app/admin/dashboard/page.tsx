@@ -167,7 +167,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-10 max-w-[1600px] mx-auto">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-6 w-full max-w-[1600px] mx-auto min-w-0">
       
       {/* Header Area */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2">
@@ -176,14 +176,14 @@ export default function AdminDashboard() {
             Dashboard
           </h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between md:justify-end gap-4 w-full md:w-auto">
            {/* Mock Search Bar */}
            <div className="hidden sm:flex items-center bg-[#13111C] border border-[#2D283E] rounded-full px-4 py-2 w-64 focus-within:border-purple-500 transition-colors">
-              <Search size={16} className="text-gray-500 mr-2" />
+              <Search size={16} className="text-gray-500 mr-2 shrink-0" />
               <input type="text" placeholder="Search..." className="bg-transparent border-none outline-none text-sm text-white w-full placeholder-gray-500" />
            </div>
            {/* Mock Profile & Notifications */}
-           <div className="flex items-center gap-3">
+           <div className="flex items-center gap-3 ml-auto md:ml-0">
               <button className="w-10 h-10 rounded-full bg-[#13111C] border border-[#2D283E] flex items-center justify-center text-gray-400 hover:text-white transition-colors relative">
                  <Bell size={18} />
                  <span className="absolute top-2 right-2 w-2 h-2 bg-purple-500 rounded-full border border-[#080A12]"></span>
@@ -196,33 +196,33 @@ export default function AdminDashboard() {
       </div>
 
       {/* Main Grid Layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 w-full max-w-full min-w-0">
         
         {/* Left/Center Content Area */}
-        <div className="xl:col-span-9 flex flex-col gap-6 min-w-0">
+        <div className="xl:col-span-9 flex flex-col gap-6 w-full max-w-full min-w-0">
           
-          {/* Top Row: Large Chart (2/3) + Stacked Cards (1/3) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Top Row: Overview Chart */}
+          <div className="w-full max-w-full min-w-0">
             
             {/* Large Purple Chart Card */}
-            <div className="lg:col-span-2 bg-gradient-to-b from-[#2A2346] to-[#1E1B2E] border border-purple-500/20 rounded-[2.5rem] p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] flex flex-col relative overflow-hidden group">
+            <div className="bg-gradient-to-b from-[#2A2346] to-[#1E1B2E] border border-purple-500/20 rounded-2xl sm:rounded-3xl md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 shadow-[0_0_50px_rgba(168,85,247,0.05)] flex flex-col relative overflow-hidden group w-full max-w-full min-w-0 box-border">
                {/* Background Glow */}
                <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-purple-500/10 blur-[80px] rounded-full pointer-events-none"></div>
                
                <div className="flex justify-between items-start mb-2 relative z-10">
                  <div>
-                    <h2 className="text-white font-bold text-xl mb-1">Overview</h2>
+                    <h2 className="text-white font-bold text-lg sm:text-xl mb-1">Overview</h2>
                     <p className="text-purple-300/60 text-xs">Team performance trends</p>
                  </div>
-                 <div className="bg-[#13111C]/50 border border-purple-500/20 rounded-full px-4 py-1.5 text-xs text-purple-300 font-medium flex items-center transition-colors">
+                 <div className="bg-[#13111C]/50 border border-purple-500/20 rounded-full px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs text-purple-300 font-medium flex items-center transition-colors">
                     {programs.filter((p: any) => p.status === 'ongoing').length} Ongoing
                  </div>
                </div>
                
                {/* Chart Area */}
-               <div className="flex-1 min-h-[160px] relative z-10 w-full ml-[-10px]">
+               <div className="flex-1 min-h-[160px] relative z-10 w-full min-w-0">
                   <Line data={lineChartData} options={lineChartOptions} />
-                  {/* Floating Stat inside chart area (Mocking the 9.178 Steps bubble) */}
+                  {/* Floating Stat inside chart area */}
                   <div className="absolute top-1/4 left-1/3 bg-[#1E1B2E] border border-purple-500/30 rounded-xl px-3 py-1.5 shadow-xl hidden sm:flex items-center gap-2 transform -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
                      <div className="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
                      <div>
@@ -233,72 +233,72 @@ export default function AdminDashboard() {
                </div>
 
                {/* Bottom 3 Stats */}
-               <div className="grid grid-cols-3 gap-3 sm:gap-4 mt-6 relative z-10">
-                  <div className="bg-[#13111C]/40 backdrop-blur-md border border-white/5 rounded-2xl p-3 sm:p-4 hover:border-purple-500/30 transition-colors flex flex-col items-center justify-center text-center">
-                     <p className="text-purple-300/50 text-[10px] sm:text-xs font-semibold mb-1 uppercase tracking-wider">Total Programs</p>
+               <div className="grid grid-cols-3 gap-2 sm:gap-4 mt-6 relative z-10 w-full max-w-full">
+                  <div className="bg-[#13111C]/40 backdrop-blur-md border border-white/5 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 hover:border-purple-500/30 transition-colors flex flex-col items-center justify-center text-center min-w-0">
+                     <p className="text-purple-300/50 text-[9px] sm:text-xs font-semibold mb-1 uppercase tracking-wider truncate w-full">Total Programs</p>
                      <div className="flex items-baseline justify-center gap-1.5">
-                       <h3 className="text-white font-bold text-lg sm:text-2xl leading-none">{programs.length}</h3>
+                       <h3 className="text-white font-bold text-base sm:text-2xl leading-none">{programs.length}</h3>
                        <span className="text-gray-500 text-[10px] sm:text-xs mb-0.5 hidden sm:inline">Active</span>
                      </div>
                   </div>
-                  <div className="bg-[#13111C]/40 backdrop-blur-md border border-white/5 rounded-2xl p-3 sm:p-4 hover:border-purple-500/30 transition-colors flex flex-col items-center justify-center text-center">
-                     <p className="text-purple-300/50 text-[10px] sm:text-xs font-semibold mb-1 uppercase tracking-wider">Finished Events</p>
+                  <div className="bg-[#13111C]/40 backdrop-blur-md border border-white/5 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 hover:border-purple-500/30 transition-colors flex flex-col items-center justify-center text-center min-w-0">
+                     <p className="text-purple-300/50 text-[9px] sm:text-xs font-semibold mb-1 uppercase tracking-wider truncate w-full">Finished Events</p>
                      <div className="flex items-baseline justify-center gap-1.5">
-                       <h3 className="text-white font-bold text-lg sm:text-2xl leading-none">{programs.filter((p: any) => p.status === 'completed').length}</h3>
+                       <h3 className="text-white font-bold text-base sm:text-2xl leading-none">{programs.filter((p: any) => p.status === 'completed').length}</h3>
                        <span className="text-gray-500 text-[10px] sm:text-xs mb-0.5 hidden sm:inline">Events</span>
                      </div>
                   </div>
-                  <div className="bg-[#13111C]/40 backdrop-blur-md border border-purple-500/30 rounded-2xl p-3 sm:p-4 shadow-[0_0_20px_rgba(168,85,247,0.15)] relative overflow-hidden flex flex-col items-center justify-center text-center">
+                  <div className="bg-[#13111C]/40 backdrop-blur-md border border-purple-500/30 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 shadow-[0_0_20px_rgba(168,85,247,0.15)] relative overflow-hidden flex flex-col items-center justify-center text-center min-w-0">
                      <div className="absolute inset-0 bg-gradient-to-br from-purple-600/10 to-transparent pointer-events-none"></div>
-                     <p className="text-purple-300/80 text-[10px] sm:text-xs font-semibold mb-1 uppercase tracking-wider relative z-10">Upcoming</p>
+                     <p className="text-purple-300/80 text-[9px] sm:text-xs font-semibold mb-1 uppercase tracking-wider relative z-10 truncate w-full">Upcoming</p>
                      <div className="flex items-baseline justify-center gap-1.5 relative z-10">
-                       <h3 className="text-white font-bold text-lg sm:text-2xl leading-none">{programs.filter((p: any) => p.status === 'upcoming').length}</h3>
+                       <h3 className="text-white font-bold text-base sm:text-2xl leading-none">{programs.filter((p: any) => p.status === 'upcoming').length}</h3>
                        <span className="text-gray-400 text-[10px] sm:text-xs mb-0.5 hidden sm:inline">Progs</span>
                      </div>
                   </div>
                </div>
             </div>
+          </div>
 
-            {/* Stacked Cards */}
-            <div className="lg:col-span-1 flex flex-col gap-6">
-               
-               {/* Participants Card */}
-               <div className="flex-1 bg-gradient-to-br from-[#2D2B52] to-[#1E1B2E] border border-indigo-500/20 rounded-[2rem] p-6 flex flex-col justify-between group hover:border-indigo-500/40 transition-all shadow-lg relative overflow-hidden min-h-[140px]">
-                  <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-indigo-500/10 blur-[40px] rounded-full pointer-events-none"></div>
-                  <div className="flex items-start justify-between relative z-10">
-                    <div className="w-12 h-12 rounded-xl bg-[#13111C]/50 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-inner">
-                      <Users size={24} strokeWidth={1.5} />
-                    </div>
+          {/* Participants & Active Groups 2-Column Row */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 w-full max-w-full min-w-0">
+             
+             {/* Participants Card */}
+             <div className="bg-gradient-to-br from-[#2D2B52] to-[#1E1B2E] border border-indigo-500/20 rounded-2xl sm:rounded-[2rem] p-3.5 sm:p-6 flex flex-col justify-between group hover:border-indigo-500/40 transition-all shadow-lg relative overflow-hidden min-h-[120px] sm:min-h-[140px] w-full max-w-full min-w-0 box-border">
+                <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-indigo-500/10 blur-[40px] rounded-full pointer-events-none"></div>
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-[#13111C]/50 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shadow-inner shrink-0">
+                    <Users size={20} className="sm:w-6 sm:h-6" strokeWidth={1.5} />
                   </div>
-                  <div className="relative z-10 flex items-end justify-between mt-4">
-                    <p className="text-indigo-300/70 text-xs font-semibold uppercase tracking-wider mb-1 whitespace-nowrap">Participants</p>
-                    <h3 className="text-white font-black text-5xl leading-none">
-                      {participantCount}
-                    </h3>
-                  </div>
-               </div>
+                </div>
+                <div className="relative z-10 flex items-end justify-between mt-3 sm:mt-4 min-w-0">
+                  <p className="text-indigo-300/70 text-[10px] sm:text-xs font-semibold uppercase tracking-wider mb-0.5 sm:mb-1 truncate">Participants</p>
+                  <h3 className="text-white font-black text-2xl sm:text-4xl md:text-5xl leading-none shrink-0 ml-1">
+                    {participantCount}
+                  </h3>
+                </div>
+             </div>
 
-               {/* Groups Card */}
-               <div className="flex-1 bg-gradient-to-br from-[#4A2545] to-[#1E1B2E] border border-pink-500/20 rounded-[2rem] p-6 flex flex-col justify-between group hover:border-pink-500/40 transition-all shadow-lg relative overflow-hidden min-h-[140px]">
-                  <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-pink-500/10 blur-[40px] rounded-full pointer-events-none"></div>
-                  <div className="flex items-start justify-between relative z-10">
-                    <div className="w-12 h-12 rounded-xl bg-[#13111C]/50 border border-pink-500/20 flex items-center justify-center text-pink-400 shadow-inner">
-                      <Layers size={24} strokeWidth={1.5} />
-                    </div>
+             {/* Groups Card */}
+             <div className="bg-gradient-to-br from-[#4A2545] to-[#1E1B2E] border border-pink-500/20 rounded-2xl sm:rounded-[2rem] p-3.5 sm:p-6 flex flex-col justify-between group hover:border-pink-500/40 transition-all shadow-lg relative overflow-hidden min-h-[120px] sm:min-h-[140px] w-full max-w-full min-w-0 box-border">
+                <div className="absolute top-0 right-0 -mr-10 -mt-10 w-32 h-32 bg-pink-500/10 blur-[40px] rounded-full pointer-events-none"></div>
+                <div className="flex items-start justify-between relative z-10">
+                  <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-[#13111C]/50 border border-pink-500/20 flex items-center justify-center text-pink-400 shadow-inner shrink-0">
+                    <Layers size={20} className="sm:w-6 sm:h-6" strokeWidth={1.5} />
                   </div>
-                  <div className="relative z-10 flex items-end justify-between mt-4">
-                    <p className="text-pink-300/70 text-xs font-semibold uppercase tracking-wider mb-1 whitespace-nowrap">Active Groups</p>
-                    <h3 className="text-white font-black text-5xl leading-none">
-                      {groups.length}
-                    </h3>
-                  </div>
-               </div>
+                </div>
+                <div className="relative z-10 flex items-end justify-between mt-3 sm:mt-4 min-w-0">
+                  <p className="text-pink-300/70 text-[10px] sm:text-xs font-semibold uppercase tracking-wider mb-0.5 sm:mb-1 truncate">Active Groups</p>
+                  <h3 className="text-white font-black text-2xl sm:text-4xl md:text-5xl leading-none shrink-0 ml-1">
+                    {groups.length}
+                  </h3>
+                </div>
+             </div>
 
-            </div>
           </div>
 
           {/* Middle Row: Progress Cards (Top 3 Teams) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 w-full max-w-full min-w-0">
             {sortedTeams.slice(0, 3).map((team, index) => {
                const maxScore = sortedTeams[0]?.totalScore || 1;
                const percentage = Math.round(((team.totalScore || 0) / maxScore) * 100);
@@ -306,14 +306,14 @@ export default function AdminDashboard() {
                const Icon = icons[index % icons.length];
                
                return (
-                 <div key={team._id} className="bg-[#1E1B2E] border border-[#2D283E] rounded-[2rem] p-6 shadow-xl flex flex-col hover:border-purple-500/30 transition-colors group">
-                    <div className="flex justify-between items-start mb-6">
-                       <div className={`w-12 h-12 rounded-[1rem] flex items-center justify-center shadow-lg ${
+                 <div key={team._id} className="bg-[#1E1B2E] border border-[#2D283E] rounded-2xl sm:rounded-[2rem] p-4 sm:p-6 shadow-xl flex flex-col hover:border-purple-500/30 transition-colors group w-full max-w-full min-w-0 box-border">
+                    <div className="flex justify-between items-start mb-4 sm:mb-6">
+                       <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-[1rem] flex items-center justify-center shadow-lg ${
                          index === 0 ? 'bg-indigo-500 text-white shadow-indigo-500/30' : 
                          index === 1 ? 'bg-purple-500 text-white shadow-purple-500/30' : 
                          'bg-[#2D283E] text-white shadow-black/20'
                        }`}>
-                          <Icon size={22} strokeWidth={1.5} />
+                          <Icon size={20} strokeWidth={1.5} />
                        </div>
                        <div className="flex items-center gap-1">
                           <span className="w-1 h-1 rounded-full bg-gray-500"></span>
@@ -323,7 +323,7 @@ export default function AdminDashboard() {
                     </div>
                     
                     <h3 className="text-white font-bold text-base mb-1 truncate w-full" title={team.name}>{team.name}</h3>
-                    <p className="text-gray-500 text-xs font-medium mb-6">{team.totalScore} Points</p>
+                    <p className="text-gray-500 text-xs font-medium mb-4 sm:mb-6">{team.totalScore} Points</p>
                     
                     <div className="w-full mt-auto">
                       <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 mb-2">
@@ -347,8 +347,8 @@ export default function AdminDashboard() {
             })}
             
             {sortedTeams.length === 0 && (
-               <div className="col-span-3 text-center py-10 bg-[#1E1B2E] border border-[#2D283E] rounded-[2rem]">
-                  <p className="text-gray-500">No team data available for progress cards.</p>
+               <div className="col-span-1 sm:col-span-3 text-center py-10 bg-[#1E1B2E] border border-[#2D283E] rounded-2xl sm:rounded-[2rem] w-full">
+                  <p className="text-gray-500 text-sm">No team data available for progress cards.</p>
                </div>
             )}
           </div>
@@ -356,12 +356,12 @@ export default function AdminDashboard() {
         </div>
 
         {/* Right Sidebar */}
-        <div className="xl:col-span-3 flex flex-col gap-6 shrink-0">
+        <div className="xl:col-span-3 flex flex-col gap-6 w-full max-w-full min-w-0">
            
            {/* Teams Standings (Like "Friends" list) */}
-           <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-[2rem] p-6 shadow-xl h-fit">
+           <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-2xl sm:rounded-[2rem] p-4 sm:p-6 shadow-xl h-fit w-full max-w-full min-w-0 box-border">
               <div className="flex items-center mb-4">
-                <h2 className="text-white font-bold text-lg">Top Teams</h2>
+                <h2 className="text-white font-bold text-base sm:text-lg">Top Teams</h2>
               </div>
               
               <div className="divide-y divide-[#2D283E]">
@@ -378,18 +378,18 @@ export default function AdminDashboard() {
                   const bgClass = colors[index % colors.length];
 
                   return (
-                  <div key={team._id} className="flex items-center gap-3 group py-3">
+                  <div key={team._id} className="flex items-center gap-3 group py-3 min-w-0">
                      {/* Avatar */}
-                     <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${bgClass} p-[1px] shrink-0`}>
+                     <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br ${bgClass} p-[1px] shrink-0`}>
                        <div className="w-full h-full bg-[#1E1B2E] rounded-full flex items-center justify-center">
-                         <span className="text-white font-bold text-sm bg-clip-text text-transparent bg-gradient-to-br border-white">{initial}</span>
+                         <span className="text-white font-bold text-xs sm:text-sm bg-clip-text text-transparent bg-gradient-to-br border-white">{initial}</span>
                        </div>
                      </div>
                      <div className="flex-1 min-w-0">
                        <h4 className="text-white text-sm font-bold truncate group-hover:text-purple-400 transition-colors cursor-default" title={team.name}>{team.name}</h4>
                        <p className="text-gray-500 text-[10px] font-medium">{team.totalScore} Points</p>
                      </div>
-                     <div className="w-6 h-6 rounded-lg bg-[#13111C] border border-[#2D283E] flex items-center justify-center text-[10px] font-bold text-gray-400 group-hover:border-purple-500/30 transition-colors">
+                     <div className="w-6 h-6 rounded-lg bg-[#13111C] border border-[#2D283E] flex items-center justify-center text-[10px] font-bold text-gray-400 group-hover:border-purple-500/30 transition-colors shrink-0">
                        {index + 1}
                      </div>
                   </div>
@@ -402,13 +402,13 @@ export default function AdminDashboard() {
            </div>
 
            {/* Upcoming Events (Like "Live Map") */}
-           <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-[2rem] p-6 shadow-xl relative overflow-hidden">
+           <div className="bg-[#1E1B2E] border border-[#2D283E] rounded-2xl sm:rounded-[2rem] p-4 sm:p-6 shadow-xl relative overflow-hidden w-full max-w-full min-w-0 box-border">
               <div className="absolute -right-4 -bottom-4 opacity-5 pointer-events-none">
                  <MapPin size={120} />
               </div>
-              <div className="flex justify-between items-center mb-5 relative z-10">
+              <div className="flex justify-between items-center mb-4 sm:mb-5 relative z-10">
                 <div className="flex items-center gap-2">
-                  <MapPin size={16} className="text-gray-400" />
+                  <MapPin size={16} className="text-gray-400 shrink-0" />
                   <h2 className="text-white font-bold text-sm">Upcoming Events</h2>
                 </div>
                 <span className="text-[10px] text-gray-500 cursor-pointer hover:text-white transition-colors font-medium">View Map</span>
@@ -416,13 +416,13 @@ export default function AdminDashboard() {
               
               <div className="space-y-3 relative z-10">
                  {upcomingEvents.length > 0 ? upcomingEvents.map(event => (
-                   <div key={event._id} className="flex gap-3 items-center group bg-[#13111C]/50 p-2.5 rounded-xl border border-[#2D283E] hover:border-purple-500/30 transition-colors">
+                   <div key={event._id} className="flex gap-3 items-center group bg-[#13111C]/50 p-2.5 rounded-xl border border-[#2D283E] hover:border-purple-500/30 transition-colors min-w-0">
                      <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-400 shrink-0">
                         <CalendarDays size={14} />
                      </div>
                      <div className="flex-1 min-w-0">
                        <p className="text-gray-300 text-xs font-bold truncate group-hover:text-white transition-colors">{event.name}</p>
-                       <p className="text-gray-500 text-[9px] mt-0.5">{event.language || 'English'} • {event.groupId?.name || 'N/A'}</p>
+                       <p className="text-gray-500 text-[9px] mt-0.5 truncate">{event.language || 'English'} • {event.groupId?.name || 'N/A'}</p>
                      </div>
                    </div>
                  )) : (
@@ -437,10 +437,10 @@ export default function AdminDashboard() {
       </div>
 
       {/* Bottom Row: Active Programs (Moved to full width, no outer box) */}
-      <div className="mt-8 space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2">
+      <div className="mt-8 space-y-4 w-full max-w-full min-w-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 w-full max-w-full">
             <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                 Active Programs
               </h2>
               <span className="px-2.5 py-0.5 rounded-md bg-[#1E1B2E] text-purple-300 text-xs font-bold border border-[#2D283E]">
@@ -448,13 +448,13 @@ export default function AdminDashboard() {
               </span>
             </div>
             
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <div className="bg-[#1E1B2E] p-1 rounded-xl border border-[#2D283E] flex w-full sm:w-auto overflow-x-auto custom-scrollbar">
+            <div className="w-full sm:w-auto max-w-full">
+                <div className="bg-[#1E1B2E] p-1 rounded-xl border border-[#2D283E] flex w-full sm:w-auto overflow-x-auto max-w-full flex-nowrap custom-scrollbar no-scrollbar">
                     {languages.map(lang => (
                         <button
                             key={lang}
                             onClick={() => setSelectedLanguage(lang)}
-                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                            className={`px-3.5 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                                 selectedLanguage === lang
                                     ? 'bg-purple-600 text-white shadow-sm'
                                     : 'text-gray-400 hover:text-white'
@@ -468,11 +468,11 @@ export default function AdminDashboard() {
         </div>
         
         {isProgramsVisible && (
-            <div>
+            <div className="w-full max-w-full min-w-0">
                 {filteredActivePrograms.length > 0 ? (
                   <ProgramCards programs={filteredActivePrograms} onStatusUpdate={handleStatusUpdate} />
                 ) : (
-                <div className="col-span-full text-center p-12 bg-[#1E1B2E]/50 rounded-2xl border border-dashed border-[#2D283E] flex flex-col items-center gap-2">
+                <div className="col-span-full text-center p-8 sm:p-12 bg-[#1E1B2E]/50 rounded-2xl border border-dashed border-[#2D283E] flex flex-col items-center gap-2 w-full">
                     <Calendar size={40} className="opacity-20 text-purple-500 mb-2" />
                     <p className="text-gray-400 text-sm">No active programs matching your filters</p>
                 </div>
@@ -488,39 +488,41 @@ export default function AdminDashboard() {
 
 function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusUpdate: (id: string, status: string) => void }) {
   return (
-    <div className="w-full py-2">
-      <div className="relative pl-6 sm:pl-8 space-y-3">
-        {/* Timeline Line */}
-        <div className="absolute left-2.5 sm:left-3.5 top-4 bottom-4 w-0.5 bg-purple-500/30 rounded-full"></div>
-
+    <div className="w-full py-2 max-w-full min-w-0">
+      <div className="relative space-y-3 w-full max-w-full">
         {programs.map((program: any) => {
           const isOngoing = program.status === 'ongoing';
 
           return (
-            <div key={program._id} className="relative flex items-center group">
-              {/* Timeline Node Ring */}
-              <div className="absolute -left-6 sm:-left-8 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center">
-                {isOngoing ? (
-                  <div className="w-3.5 h-3.5 rounded-full border-2 border-purple-400 bg-[#1E1B2E] flex items-center justify-center">
-                    <div className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,1)]"></div>
-                  </div>
-                ) : (
-                  <div className="w-3 h-3 rounded-full border-2 border-purple-500/30 bg-[#1E1B2E]"></div>
-                )}
+            <div key={program._id} className="relative flex gap-3 sm:gap-4 items-stretch group w-full max-w-full min-w-0">
+              {/* Timeline Node & Line Column */}
+              <div className="relative flex flex-col items-center shrink-0 w-4 sm:w-5">
+                {/* Vertical Line */}
+                <div className="w-0.5 h-full bg-purple-500/30 rounded-full absolute top-0 bottom-0 left-1/2 -translate-x-1/2"></div>
+                {/* Node Ring */}
+                <div className="relative z-10 my-auto flex items-center justify-center">
+                  {isOngoing ? (
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-purple-400 bg-[#1E1B2E] flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,1)]"></div>
+                    </div>
+                  ) : (
+                    <div className="w-3 h-3 rounded-full border-2 border-purple-500/30 bg-[#1E1B2E]"></div>
+                  )}
+                </div>
               </div>
 
-              {/* Card Container - Compact parallel row */}
-              <div className={`w-full rounded-2xl px-4 py-3 bg-[#131629] border ${
+              {/* Card Container */}
+              <div className={`flex-1 min-w-0 rounded-2xl p-3.5 sm:p-4 bg-[#131629] border ${
                 isOngoing ? 'border-purple-500/50 bg-[#181b36] shadow-lg shadow-purple-900/20' : 'border-white/[0.06] hover:border-purple-500/30 hover:bg-[#161830]'
-              } transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group/card`}>
+              } transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 group/card box-border`}>
                 
-                {/* Parallel Items (Heading + Group Badge + Program/Language Badge) */}
-                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 flex-1 min-w-0">
-                  <h3 className="font-bold text-white text-sm sm:text-base tracking-wide truncate max-w-[220px] sm:max-w-none">
+                {/* Program Info (Heading + Badges) */}
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                  <h3 className="font-bold text-white text-sm sm:text-base tracking-wide break-words max-w-full">
                     {program.name}
                   </h3>
 
-                  <span className="px-2.5 py-0.5 rounded-md bg-purple-500/10 text-purple-300 text-xs font-semibold border border-purple-500/20 whitespace-nowrap">
+                  <span className="px-2.5 py-0.5 rounded-md bg-purple-500/10 text-purple-300 text-xs font-semibold border border-purple-500/20 whitespace-normal break-all">
                     {program.groupId?.name || 'General'}
                   </span>
 
@@ -541,7 +543,7 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
                 </div>
 
                 {/* Right Side Controls (Status Select Pill + Actions) */}
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-1 sm:pt-0 border-t border-white/5 sm:border-t-0">
                   <div className="relative inline-block group/select">
                     <select 
                       value={program.status || 'upcoming'}
@@ -566,7 +568,7 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
                   </div>
 
                   <button 
-                    className="text-gray-500 hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-white/10 opacity-0 group-hover/card:opacity-100"
+                    className="text-gray-500 hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-white/10 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100"
                     onClick={() => {/* Mock delete action */}}
                     title="Delete Program"
                   >

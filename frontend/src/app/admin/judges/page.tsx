@@ -158,15 +158,11 @@ export default function JudgeGroupsPage() {
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
       <div className="absolute top-40 right-1/4 w-96 h-96 bg-pink-600/10 rounded-full blur-[100px] pointer-events-none -z-10" />
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2 mb-6">
         <div>
-          <h1 className="text-3xl tracking-tight font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-red-400">
-            Judge Groups (Panels)
+          <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 tracking-tight">
+            Judge Panels
           </h1>
-          <div className="text-gray-400 mt-2 flex items-center gap-2">
-             <div className="w-8 h-px bg-gradient-to-r from-purple-500/50 to-transparent" />
-             Create and manage judging panels for programs
-          </div>
         </div>
         <button
           onClick={() => { setShowModal(true); setProgramSearchQ(''); }}
