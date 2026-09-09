@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown } from 'lucide-react';
 import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate } from '@/lib/queries';
@@ -1650,8 +1650,44 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
 }
 
 function ParticipantsTab({ program, participants }: { program: any; participants: any[] }) {
-    const enrolledParticipants = participants.filter(p => p.programs?.some((prog: any) => prog._id === program._id || prog === program._id));
-    
+    const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>('default');
+
+    const enrolledParticipants = useMemo(() => {
+        return participants.filter(p => p.programs?.some((prog: any) => prog._id === program._id || prog === program._id));
+    }, [participants, program._id]);
+
+    const sortedParticipants = useMemo(() => {
+        if (sortOrder === 'default') return enrolledParticipants;
+
+        return [...enrolledParticipants].sort((a: any, b: any) => {
+            const rawA = a.chestNumber != null ? String(a.chestNumber).trim() : '';
+            const rawB = b.chestNumber != null ? String(b.chestNumber).trim() : '';
+
+            const numA = parseInt(rawA, 10);
+            const numB = parseInt(rawB, 10);
+
+            const isNumA = rawA !== '' && !isNaN(numA);
+            const isNumB = rawB !== '' && !isNaN(numB);
+
+            let cmp = 0;
+            if (isNumA && isNumB) {
+                cmp = numA - numB;
+            } else if (isNumA && !isNumB) {
+                cmp = -1;
+            } else if (!isNumA && isNumB) {
+                cmp = 1;
+            } else {
+                cmp = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
+            }
+
+            if (cmp === 0) {
+                cmp = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
+            }
+
+            return sortOrder === 'asc' ? cmp : -cmp;
+        });
+    }, [enrolledParticipants, sortOrder]);
+
     if (enrolledParticipants.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-10 text-gray-500">
@@ -1662,40 +1698,66 @@ function ParticipantsTab({ program, participants }: { program: any; participants
     }
 
     return (
-        <div className="divide-y divide-[#2D283E] custom-scrollbar overflow-y-auto max-h-[400px] pr-2">
-            {enrolledParticipants.map((p: any, i) => (
-                <div key={p._id} className="flex items-center gap-4 py-3 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
-                    <div className="font-mono text-gray-500 text-sm w-6">{i + 1}</div>
-                    <div className="relative w-10 h-10 flex-shrink-0">
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border-2 border-white/10">
-                            {p.name.charAt(0)}
-                        </div>
-                        <img 
-                            src={`${API_BASE_URL}/participants/${p._id}/photo`} 
-                            alt={p.name} 
-                            loading="lazy"
-                            className="absolute inset-0 w-full h-full rounded-full object-cover border-2 border-purple-500/30"
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        />
-                    </div>
-                    <div className="flex-1">
-                        <h4 className="text-gray-200 font-bold text-sm">{p.name}</h4>
-                        <p className="text-gray-500 text-xs flex items-center gap-2">
-                            <span className="font-mono text-purple-400">{p.chestNumber}</span> &middot; 
-                            <span>{p.teamId?.name || 'No Team'}</span>
-                            {p.programTopics?.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId && (
-                                <>
-                                    &middot;
-                                    <span className="text-purple-400/80 italic flex items-center gap-1">
-                                        <FileText size={10} />
-                                        {program.topics?.find((t:any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
-                                    </span>
-                                </>
-                            )}
-                        </p>
-                    </div>
+        <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#2D283E]">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users size={14} className="text-purple-400" />
+                    <span>Enrolled Participants ({enrolledParticipants.length})</span>
                 </div>
-            ))}
+
+                <div className="flex items-center gap-2">
+                    <label htmlFor={`sort-participants-${program._id}`} className="text-xs text-gray-400 flex items-center gap-1 shrink-0">
+                        <ArrowUpDown size={12} className="text-purple-400" />
+                        <span>Sort:</span>
+                    </label>
+                    <select
+                        id={`sort-participants-${program._id}`}
+                        value={sortOrder}
+                        onChange={(e) => setSortOrder(e.target.value as 'default' | 'asc' | 'desc')}
+                        className="bg-[#13111C] border border-[#2D283E] focus:border-purple-500 text-gray-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer transition-colors"
+                    >
+                        <option value="default">Default Order</option>
+                        <option value="asc">Smallest → Largest</option>
+                        <option value="desc">Largest → Smallest</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="divide-y divide-[#2D283E] custom-scrollbar overflow-y-auto max-h-[400px] pr-2">
+                {sortedParticipants.map((p: any, i) => (
+                    <div key={p._id} className="flex items-center gap-4 py-3 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
+                        <div className="font-mono text-gray-500 text-sm w-6">{i + 1}</div>
+                        <div className="relative w-10 h-10 flex-shrink-0">
+                            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border-2 border-white/10">
+                                {p.name.charAt(0)}
+                            </div>
+                            <img 
+                                src={`${API_BASE_URL}/participants/${p._id}/photo`} 
+                                alt={p.name} 
+                                loading="lazy"
+                                className="absolute inset-0 w-full h-full rounded-full object-cover border-2 border-purple-500/30"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="text-gray-200 font-bold text-sm">{p.name}</h4>
+                            <p className="text-gray-500 text-xs flex items-center gap-2">
+                                <span className="font-mono text-purple-400">{p.chestNumber}</span> &middot; 
+                                <span>{p.teamId?.name || 'No Team'}</span>
+                                {p.programTopics?.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId && (
+                                    <>
+                                        &middot;
+                                        <span className="text-purple-400/80 italic flex items-center gap-1">
+                                            <FileText size={10} />
+                                            {program.topics?.find((t:any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
+                                        </span>
+                                    </>
+                                )}
+                            </p>
+                        </div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
