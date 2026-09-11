@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Users, LayoutGrid, Award, Calendar, FileText, LogOut, CheckSquare, PanelLeftClose, PanelLeftOpen, BarChart3, Shield, UsersRound, Gavel, BookOpen, Plus, Menu, X } from 'lucide-react';
@@ -14,6 +14,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [authorized, setAuthorized] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isThreeDotMenuOpen, setIsThreeDotMenuOpen] = useState(false);
+  const threeDotMenuRef = useRef<HTMLDivElement>(null);
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
@@ -25,7 +27,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
+    setIsThreeDotMenuOpen(false);
   }, [pathname]);
+
+  // Close three-dot menu on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (threeDotMenuRef.current && !threeDotMenuRef.current.contains(event.target as Node)) {
+        setIsThreeDotMenuOpen(false);
+      }
+    }
+    if (isThreeDotMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isThreeDotMenuOpen]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -60,7 +76,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <QueryClientProvider client={queryClient}>
-      <div className="flex min-h-screen bg-[#080A12] text-white font-sans pb-28 pt-14 md:py-0 overflow-x-hidden w-full max-w-full min-w-0">
+      <div className="flex min-h-screen bg-[#080A12] text-white font-sans pb-28 md:py-0 overflow-x-hidden w-full max-w-full min-w-0">
         
         {/* Sidebar - Hidden on Mobile, togglable on desktop */}
         <aside className={`hidden md:flex bg-[#0D0F1E] border-r border-white/[0.06] flex-col fixed h-full z-50 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
@@ -122,86 +138,62 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </aside>
 
-        {/* Mobile Top Header with Top-Left Three-Line Menu Button */}
-        <div className="md:hidden fixed top-0 left-0 right-0 bg-[#0D0F1E]/95 backdrop-blur-xl border-b border-white/[0.06] z-40 px-4 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
-              className={`p-2 rounded-xl border transition-all ${
-                isMobileMenuOpen 
-                  ? 'bg-purple-600/20 text-purple-400 border-purple-500/40 shadow-sm' 
-                  : 'bg-[#13111C] text-gray-300 border-white/[0.08] hover:text-white'
-              }`}
-              aria-label="Toggle Mobile Navigation Menu"
-            >
-              {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
+        {/* Three-dot menu - visible on mobile only */}
+        <div ref={threeDotMenuRef} className="md:hidden fixed top-4 right-4 z-50">
+          <button
+            onClick={() => setIsThreeDotMenuOpen(!isThreeDotMenuOpen)}
+            className={`w-10 h-10 flex items-center justify-center rounded-xl text-xl transition-all ${
+              isThreeDotMenuOpen
+                ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40 shadow-sm'
+                : 'text-gray-400 hover:text-white hover:bg-white/10'
+            }`}
+            aria-label="Open menu"
+          >
+            ⋮
+          </button>
 
-            <div className="flex flex-col">
-              <span className="text-sm font-bold text-white tracking-tight leading-none">Admin Panel</span>
-              <span className="text-[10px] text-purple-400 font-medium mt-0.5">Art Festival</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Top-Left Hamburger Drawer Menu Popover */}
-        {isMobileMenuOpen && (
-          <>
-            {/* Backdrop overlay */}
-            <div 
-              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-in fade-in duration-200" 
-              onClick={() => setIsMobileMenuOpen(false)}
-            />
-            
-            {/* Compact glassmorphism popover menu positioned under top-left button */}
-            <div className="md:hidden fixed top-14 left-4 z-50 w-60 bg-[#13111C]/95 backdrop-blur-2xl border border-purple-500/30 rounded-2xl p-2 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06] mb-1">
-                <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">Navigation</span>
-                <button 
-                  onClick={() => setIsMobileMenuOpen(false)} 
-                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
+          {/* Three-dot glassmorphic dropdown */}
+          {isThreeDotMenuOpen && (
+            <div className="absolute top-12 right-0 w-52 bg-[#13111C]/95 backdrop-blur-2xl border border-purple-500/30 rounded-2xl p-2 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="space-y-1">
                 <Link
                   href="/admin/teams"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={() => setIsThreeDotMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     pathname === '/admin/teams' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'text-gray-300 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <Shield size={18} className="text-indigo-400" />
+                  <Shield size={16} className="text-indigo-400" />
                   <span>Teams</span>
                 </Link>
 
                 <Link
                   href="/admin/participants"
-                  onClick={() => setIsMobileMenuOpen(false)}
+                  onClick={() => setIsThreeDotMenuOpen(false)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     pathname === '/admin/participants' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'text-gray-300 hover:text-white hover:bg-white/5'
                   }`}
                 >
-                  <Users size={18} className="text-purple-400" />
-                  <span>People</span>
+                  <Users size={16} className="text-purple-400" />
+                  <span>Participants</span>
                 </Link>
+
+                <div className="border-t border-white/[0.06] my-1"></div>
 
                 <button
                   onClick={() => {
-                    setIsMobileMenuOpen(false);
+                    setIsThreeDotMenuOpen(false);
                     handleLogout();
                   }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-red-400 hover:bg-red-500/10 transition-all text-left"
                 >
-                  <LogOut size={18} />
+                  <LogOut size={16} />
                   <span>Logout</span>
                 </button>
               </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
 
         {/* Mobile Bottom Navigation */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0D0F1E]/95 backdrop-blur-xl border-t border-white/[0.06] z-40 px-1 py-3 sm:px-4 flex justify-around items-center pb-safe">

@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { usePrograms, useGroups, useIndividualRankings, useParticipantResults } from '@/lib/queries';
 import {
   Search, ChevronDown, ChevronUp, User,
   X, RefreshCw, Users, BookOpen, Trophy, 
-  Crown, Medal, ChevronLeft, ChevronRight
+  Crown, Medal, ChevronLeft, ChevronRight, SlidersHorizontal
 } from 'lucide-react';
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -68,84 +68,108 @@ export default function IndividualMarksPage() {
 
   const loading = rankingLoading || rankingFetching;
 
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+        setIsFilterOpen(false);
+      }
+    }
+    if (isFilterOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isFilterOpen]);
+
+  const hasActiveFilter = filterGroup !== 'All';
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 tracking-tight">
-            Individual Rankings
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-purple-300 bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 rounded-lg font-semibold">
-            Total: {total}
-          </span>
+      <div className="flex items-center justify-between gap-4 py-2">
+        <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 tracking-tight">
+          Individual Rankings
+        </h1>
+        <div className="flex items-center gap-3">
           {loading && (
-            <span className="flex items-center gap-1.5 text-xs text-gray-500">
-              <RefreshCw size={12} className="animate-spin" /> Fetching rankings…
-            </span>
+            <RefreshCw size={14} className="animate-spin text-purple-400" />
           )}
+          <span className="text-xs text-purple-300 bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 rounded-lg font-semibold">
+            {total}
+          </span>
         </div>
       </div>
 
-      {/* ── Search + Dropdown Filters ── */}
-      <div className="flex flex-col gap-3">
-        {/* Row 1: Search */}
-        <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-hover:text-purple-400" />
-          <input
-            type="text"
-            placeholder="Search by name or chest no.…"
-            value={searchInput}
-            onChange={e => setSearchInput(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-[#13111C] border border-[#2D283E] rounded-xl text-white placeholder-gray-600 text-sm focus:outline-none focus:border-purple-500 transition-all shadow-inner"
-          />
-          {searchInput && (
-            <button onClick={() => setSearchInput('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        {/* Row 2: Dropdown filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Group dropdown */}
-          <div className="relative group">
-            <label className="block text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-1.5 ml-1">Group Filter</label>
-            <div className="relative">
-              <select
-                value={filterGroup}
-                onChange={e => handleGroupChange(e.target.value)}
-                className="w-full appearance-none bg-[#13111C] border border-[#2D283E] text-sm text-gray-200 rounded-xl px-4 py-2.5 pr-9 focus:outline-none focus:border-purple-500 cursor-pointer transition-all hover:border-gray-600 shadow-inner"
-              >
-                {groupOptions.map(g => (
-                  <option key={g} value={g} className="bg-[#1A1825]">{g}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 group-hover:text-purple-400 pointer-events-none transition-transform" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Active filter chips */}
-      {activeFilters.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {activeFilters.map((f, i) => (
-            <span key={i} className="flex items-center gap-1.5 text-xs bg-purple-500/10 text-purple-300 border border-purple-500/30 px-3 py-1 rounded-full">
-              {f.label}
-              <button onClick={f.clear}><X size={11} /></button>
-            </span>
-          ))}
-          <button
-            onClick={() => handleGroupChange('All')}
-            className="text-xs text-gray-500 hover:text-red-400 border border-gray-700/50 hover:border-red-500/30 px-3 py-1 rounded-full transition-all"
-          >
-            Clear all
+      {/* Compact Search Bar with inline filter icon */}
+      <div className="relative flex items-center gap-0 bg-[#13111C] border border-[#2D283E] rounded-2xl px-4 py-2.5 focus-within:border-purple-500/60 transition-all shadow-lg">
+        <Search className="text-gray-500 shrink-0 mr-3" size={18} />
+        <input
+          type="text"
+          placeholder="Search by name or chest no.…"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+          className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 min-w-0"
+        />
+        {searchInput && (
+          <button onClick={() => setSearchInput('')} className="shrink-0 mr-1 text-gray-500 hover:text-white transition-colors">
+            <X size={14} />
           </button>
+        )}
+
+        {/* Filter icon button */}
+        <div ref={filterRef} className="relative shrink-0 ml-2">
+          <button
+            onClick={() => setIsFilterOpen(!isFilterOpen)}
+            className={`relative w-9 h-9 flex items-center justify-center rounded-xl transition-all ${
+              isFilterOpen || hasActiveFilter
+                ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40'
+                : 'text-gray-500 hover:text-white hover:bg-white/10'
+            }`}
+            aria-label="Filter by group"
+            title="Filter by group"
+          >
+            <SlidersHorizontal size={16} />
+            {hasActiveFilter && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-purple-500 rounded-full border border-[#13111C]"></span>
+            )}
+          </button>
+
+          {/* Filter Popover */}
+          {isFilterOpen && (
+            <div className="absolute top-12 right-0 w-56 bg-[#13111C]/95 backdrop-blur-2xl border border-purple-500/30 rounded-2xl p-4 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] font-black text-purple-400 uppercase tracking-[0.15em]">Filter</span>
+                {hasActiveFilter && (
+                  <button
+                    onClick={() => { handleGroupChange('All'); }}
+                    className="text-[10px] text-gray-500 hover:text-purple-400 font-bold uppercase tracking-wider transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">Group</label>
+                <div className="relative">
+                  <select
+                    value={filterGroup}
+                    onChange={e => handleGroupChange(e.target.value)}
+                    className="appearance-none w-full bg-[#0B0914] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-3 pr-8 py-2 text-xs font-bold focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
+                  >
+                    {groupOptions.map(g => (
+                      <option key={g} value={g} className="bg-[#1A1825]">{g}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Table */}
       <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -170,7 +194,7 @@ export default function IndividualMarksPage() {
             <p className="font-medium tracking-wide">No participants match your criteria.</p>
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-2 md:space-y-2.5">
             {participants.map((p: any, idx: number) => {
               const borderAccents = ['border-l-purple-500', 'border-l-amber-500', 'border-l-blue-500', 'border-l-indigo-500'];
               const leftBorderClass = borderAccents[idx % borderAccents.length];
@@ -179,7 +203,7 @@ export default function IndividualMarksPage() {
               <div key={p._id} className={`card-animate bg-[#131629] border-t border-r border-b border-white/[0.06] border-l-2 ${leftBorderClass} rounded-xl hover:bg-[#161830] transition-colors group/row shadow-sm overflow-hidden`} style={{ animationDelay: `${idx * 20}ms` }}>
                 {/* Main row */}
                 <div
-                  className="grid grid-cols-2 md:grid-cols-12 gap-2 md:gap-4 px-6 py-4 cursor-pointer items-center"
+                  className="grid grid-cols-2 md:grid-cols-12 gap-1.5 md:gap-4 px-3 py-2 md:px-6 md:py-4 cursor-pointer items-center"
                   onClick={() => setExpandedId(expandedId === p._id ? null : p._id)}
                 >
                   {/* Rank */}
@@ -190,13 +214,13 @@ export default function IndividualMarksPage() {
                   </div>
 
                   {/* Name + avatar */}
-                  <div className="col-span-2 md:col-span-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#111018] border border-gray-800 flex items-center justify-center text-sm font-bold text-gray-400 font-mono shadow-inner shrink-0">
+                  <div className="col-span-2 md:col-span-4 flex items-center gap-2 md:gap-3">
+                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-[#111018] border border-gray-800 flex items-center justify-center text-xs md:text-sm font-bold text-gray-400 font-mono shadow-inner shrink-0">
                       {p.chestNumber}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-gray-200 font-bold text-sm group-hover/row:text-purple-300 transition-colors truncate">{p.name}</div>
-                      <div className="text-gray-500 text-[10px] md:hidden truncate">#{p.chestNumber} · {p.teamId?.name || '—'}</div>
+                      <div className="text-gray-200 font-bold text-xs md:text-sm group-hover/row:text-purple-300 transition-colors truncate">{p.name}</div>
+                      <div className="text-gray-500 text-[9px] md:hidden truncate">#{p.chestNumber} · {p.teamId?.name || '—'}</div>
                     </div>
                   </div>
 
@@ -216,8 +240,8 @@ export default function IndividualMarksPage() {
                   </div>
 
                   {/* Total score + expand */}
-                  <div className="col-span-2 md:col-span-2 flex items-center justify-end gap-3">
-                    <div className={`font-black text-xl tabular-nums tracking-tighter ${p.totalScore > 0 ? 'text-yellow-400' : 'text-gray-600'}`}>
+                  <div className="col-span-2 md:col-span-2 flex items-center justify-end gap-2 md:gap-3">
+                    <div className={`font-black text-base md:text-xl tabular-nums tracking-tighter ${p.totalScore > 0 ? 'text-yellow-400' : 'text-gray-600'}`}>
                       {p.totalScore}
                     </div>
                     <span className={`text-gray-600 group-hover/row:text-gray-400 transition-all duration-200 ${expandedId === p._id ? 'rotate-180 text-purple-500' : ''}`}>
@@ -228,7 +252,7 @@ export default function IndividualMarksPage() {
 
                 {/* Expanded breakdown */}
                 {expandedId === p._id && (
-                  <div className="px-6 pb-6 pt-2 border-t border-white/[0.06] animate-in slide-in-from-top-2 duration-300">
+                  <div className="px-3 pb-4 pt-2 md:px-6 md:pb-6 border-t border-white/[0.06] animate-in slide-in-from-top-2 duration-300">
                     {detailsLoading ? (
                        <div className="py-8 flex justify-center"><RefreshCw size={24} className="animate-spin text-purple-500/50" /></div>
                     ) : (
