@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud, X, Edit } from 'lucide-react';
+import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud, X, Edit, SlidersHorizontal, Award } from 'lucide-react';
 import { useReviewPrograms, useReviewProgramMarks, useGroups, useInvalidate, useSettings, useConversationPairs } from '@/lib/queries';
 import ToastContainer, { type ToastData } from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -329,158 +329,198 @@ export default function MarksReviewPage() {
     );
   }
 
+  const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
+  const filterPopoverRef = useRef<HTMLDivElement>(null);
+
+  // Close filter popover on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (filterPopoverRef.current && !filterPopoverRef.current.contains(event.target as Node)) {
+        setIsFilterPopoverOpen(false);
+      }
+    }
+    if (isFilterPopoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isFilterPopoverOpen]);
+
+  const hasActiveFilters = selectedFilterGroup !== 'All' || selectedFilterLang !== 'All';
+
   return (
-    <div className="space-y-8 pb-20 animate-in fade-in duration-500">
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-2">
-            <div>
-               <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 tracking-tight">Review Marks & Reports</h1>
-            </div>
-            <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all border border-gray-700 shadow-lg"
-            >
-                <Trophy size={16} />
-                Configure Prize Points
-            </button>
+        <div className="py-2">
+            <h1 className="text-2xl md:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500 tracking-tight">Review Marks & Reports</h1>
         </div>
-        
-        {/* Controls Section */}
-        <div className="bg-[#1E1B2E] p-6 rounded-2xl border border-[#2D283E] shadow-xl flex flex-col gap-6">
-            
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div className="flex flex-wrap items-center gap-6">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block ml-1">Category</label>
-                        <div className="relative">
-                            <select
-                                value={selectedFilterGroup}
-                                onChange={(e) => setSelectedFilterGroup(e.target.value)}
-                                className="appearance-none bg-[#13111C] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-4 pr-10 py-2 text-sm font-bold w-full min-w-[160px] focus:outline-none focus:border-indigo-500 transition-colors cursor-pointer"
-                            >
-                                <option value="All">All Categories</option>
-                                {groups.map(g => (
-                                    <option key={g._id} value={g._id}>{g.name}</option>
-                                ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                                <ChevronDown size={16} />
+
+        {/* Compact Search Bar with inline filter + settings icons — shown only on main program listing */}
+        {viewMode === 'dashboard' && (
+            <div className="relative flex items-center gap-0 bg-[#13111C] border border-[#2D283E] rounded-2xl px-4 py-2.5 focus-within:border-purple-500/60 transition-all shadow-lg">
+                <Search className="text-gray-500 shrink-0 mr-3" size={18} />
+                <input
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 min-w-0"
+                    placeholder="Search programs..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+
+                {/* Filter icon button */}
+                <div ref={filterPopoverRef} className="relative shrink-0 ml-2">
+                    <button
+                        onClick={() => setIsFilterPopoverOpen(!isFilterPopoverOpen)}
+                        className={`relative w-9 h-9 flex items-center justify-center rounded-xl transition-all ${
+                            isFilterPopoverOpen || hasActiveFilters
+                                ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40'
+                                : 'text-gray-500 hover:text-white hover:bg-white/10'
+                        }`}
+                        aria-label="Filters"
+                        title="Filters"
+                    >
+                        <SlidersHorizontal size={16} />
+                        {hasActiveFilters && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-purple-500 rounded-full border border-[#13111C]"></span>
+                        )}
+                    </button>
+
+                    {/* Filter Popover */}
+                    {isFilterPopoverOpen && (
+                        <div className="absolute top-12 right-0 w-64 bg-[#13111C]/95 backdrop-blur-2xl border border-purple-500/30 rounded-2xl p-4 shadow-[0_10px_30px_rgba(0,0,0,0.8)] animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-[10px] font-black text-purple-400 uppercase tracking-[0.15em]">Filters</span>
+                                {hasActiveFilters && (
+                                    <button
+                                        onClick={() => { setSelectedFilterGroup('All'); setSelectedFilterLang('All'); }}
+                                        className="text-[10px] text-gray-500 hover:text-purple-400 font-bold uppercase tracking-wider transition-colors"
+                                    >
+                                        Reset
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="space-y-4">
+                                {/* Category */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">Category</label>
+                                    <div className="relative">
+                                        <select
+                                            value={selectedFilterGroup}
+                                            onChange={(e) => setSelectedFilterGroup(e.target.value)}
+                                            className="appearance-none w-full bg-[#0B0914] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-3 pr-8 py-2 text-xs font-bold focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
+                                        >
+                                            <option value="All">All Categories</option>
+                                            {groups.map(g => (
+                                                <option key={g._id} value={g._id}>{g.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                                            <ChevronDown size={14} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Language */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">Language</label>
+                                    <div className="relative">
+                                        <select
+                                            value={selectedFilterLang}
+                                            onChange={(e) => setSelectedFilterLang(e.target.value)}
+                                            className="appearance-none w-full bg-[#0B0914] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-3 pr-8 py-2 text-xs font-bold focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
+                                        >
+                                            {languages.map(lang => (
+                                                <option key={lang} value={lang}>
+                                                    {lang === 'All' ? 'All Languages' : lang}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
+                                            <ChevronDown size={14} />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block ml-1">Language</label>
-                        <div className="relative">
-                            <select
-                                value={selectedFilterLang}
-                                onChange={(e) => setSelectedFilterLang(e.target.value)}
-                                className="appearance-none bg-[#13111C] text-gray-300 border border-gray-800 hover:border-gray-600 rounded-xl pl-4 pr-10 py-2 text-sm font-bold w-full min-w-[160px] focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
-                            >
-                                {languages.map(lang => (
-                                    <option key={lang} value={lang}>
-                                        {lang === 'All' ? 'All Languages' : lang}
-                                    </option>
-                                ))}
-                            </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
-                                <ChevronDown size={16} />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-2 pt-6">
-                        <button
-                            onClick={() => setFilterSubmittedOnly(!filterSubmittedOnly)}
-                            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all border ${
-                                filterSubmittedOnly 
-                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/50 shadow-lg shadow-amber-900/10' 
-                                : 'bg-[#13111C] text-gray-400 border-gray-800 hover:border-gray-600'
-                            }`}
-                        >
-                            <Filter size={16} className={filterSubmittedOnly ? 'fill-current' : ''} />
-                            {filterSubmittedOnly ? 'Submitted Only' : 'All States'}
-                        </button>
-                    </div>
+                    )}
                 </div>
 
-                <div className="relative w-full md:w-80">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                    <input 
-                        className="w-full bg-[#13111C] border border-gray-700 rounded-xl pl-12 pr-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600"
-                        placeholder="Search programs..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                {/* Configure Prize Points icon button */}
+                <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="shrink-0 ml-1 w-9 h-9 flex items-center justify-center rounded-xl text-gray-500 hover:text-yellow-400 hover:bg-yellow-500/10 transition-all"
+                    aria-label="Configure Prize Points"
+                    title="Configure Prize Points"
+                >
+                    <Award size={16} />
+                </button>
+            </div>
+        )}
+
+        {/* Detail view bar — shown when reviewing a specific program */}
+        {viewMode === 'details' && selectedProgramData && (
+            <div className="bg-[#1E1B2E] p-4 md:p-5 rounded-2xl border border-[#2D283E] shadow-xl flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center justify-between animate-in slide-in-from-top-2 duration-300">
+                <div className="flex items-center gap-3.5 w-full sm:w-auto min-w-0">
+                    <button 
+                        onClick={() => setViewMode('dashboard')}
+                        className="bg-gray-800/80 hover:bg-gray-700 text-white p-2 rounded-xl transition-all border border-gray-700/80 shadow-md group shrink-0"
+                        title="Back to Programs"
+                    >
+                        <ChevronDown className="rotate-90 group-hover:-translate-x-1 transition-transform" size={18} />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                        <h3 className="text-lg md:text-xl font-bold text-white leading-tight truncate">{selectedProgramData.name}</h3>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap text-xs md:text-sm">
+                            <span className="text-purple-400 font-bold uppercase tracking-wider">{selectedProgramData.groupId?.name || 'No Group'}</span>
+                            <span className="text-gray-600 font-bold">•</span>
+                            <span className="text-gray-300 font-medium">{selectedProgramData.language}</span>
+                            <span className="text-gray-600 font-bold">•</span>
+                            <span className="text-gray-500 font-mono">#{selectedProgramData._id.slice(-6)}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    <button 
+                        onClick={handleCalculate}
+                        disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
+                    >
+                        {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={15} /> : <Trophy size={15} />}
+                        {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
+                    </button> 
+
+                    <button
+                        onClick={() => refreshMarks()}
+                        disabled={!marks.length || marksLoading}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 md:py-2 bg-green-600/10 hover:bg-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed text-green-400 rounded-xl text-xs font-bold transition-all border border-green-500/20 active:scale-95 whitespace-nowrap"
+                        title="Reprice / Refresh Marks"
+                    >
+                        <RefreshCw size={14} className={marksLoading ? "animate-spin" : ""} />
+                        <span>Reprice</span>
+                    </button>
+
+                    <button
+                        onClick={downloadCSV}
+                        disabled={!marks.length}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 md:py-2 bg-[#2D283E] hover:bg-[#352F4B] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all border border-gray-700 hover:border-gray-600 active:scale-95 whitespace-nowrap"
+                        title="Export Results"
+                    >
+                        <FileDown size={14} />
+                        <span>Export</span>
+                    </button>
+
+                    <button
+                        onClick={handleSyncGoogleSheets}
+                        disabled={!marks.length || isSyncing}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 md:py-2 bg-blue-600/10 hover:bg-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed text-blue-400 rounded-xl text-xs font-bold transition-all border border-blue-500/20 active:scale-95 whitespace-nowrap"
+                        title="Sync with Google Sheets"
+                    >
+                        {isSyncing ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
+                        <span>Google Export</span>
+                    </button>
                 </div>
             </div>
-
-            {viewMode === 'details' && selectedProgramData && (
-                <div className="flex flex-col md:flex-row gap-6 items-center justify-between pt-4 border-t border-gray-800/50 animate-in slide-in-from-top-2 duration-300">
-                    <div className="flex items-center gap-4">
-                        <button 
-                            onClick={() => setViewMode('dashboard')}
-                            className="bg-gray-800 hover:bg-gray-700 text-white p-2.5 rounded-xl transition-all border border-gray-700 shadow-lg group"
-                            title="Back to Programs"
-                        >
-                            <ChevronDown className="rotate-90 group-hover:-translate-x-1 transition-transform" size={20} />
-                        </button>
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <h3 className="text-xl font-bold text-white leading-tight">{selectedProgramData.name}</h3>
-                                <span className={`px-2.5 py-0.5 rounded text-[10px] uppercase font-black border tracking-wider ${getLangColor(selectedProgramData.language)}`}>
-                                    {selectedProgramData.language}
-                                </span>
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                                <span className="text-sm text-purple-400 font-bold uppercase tracking-wider">{selectedProgramData.groupId?.name || 'No Group'}</span>
-                                <span className="text-gray-600 px-1">•</span>
-                                <p className="text-sm text-gray-500 font-medium tracking-tight">#{selectedProgramData._id.slice(-6)}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="flex gap-3 w-full md:w-auto">
-                        <button 
-                            onClick={handleCalculate}
-                            disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
-                            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg hover:shadow-green-900/20 active:scale-95"
-                        >
-                            {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={18} /> : <Trophy size={18} />}
-                            {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
-                        </button> 
-
-                        <button
-                            onClick={() => refreshMarks()}
-                            disabled={!marks.length || marksLoading}
-                            className="p-3 bg-green-600/10 hover:bg-green-600/20 disabled:opacity-50 disabled:cursor-not-allowed text-green-400 rounded-xl font-bold transition-all border border-green-500/20 active:scale-95 flex items-center gap-2"
-                            title="Refresh Marks"
-                        >
-                            <RefreshCw size={20} className={marksLoading ? "animate-spin" : ""} />
-                            <span className="hidden sm:inline">Refresh Marks</span>
-                        </button>
-
-                        <button
-                            onClick={downloadCSV}
-                            disabled={!marks.length}
-                            className="p-3 bg-[#2D283E] hover:bg-[#352F4B] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all border border-gray-700 hover:border-gray-600 active:scale-95"
-                            title="Export Results"
-                        >
-                            <FileDown size={20} />
-                        </button>
-
-                        <button
-                            onClick={handleSyncGoogleSheets}
-                            disabled={!marks.length || isSyncing}
-                            className="p-3 bg-blue-600/10 hover:bg-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed text-blue-400 rounded-xl font-bold transition-all border border-blue-500/20 active:scale-95"
-                            title="Sync with Google Sheets"
-                        >
-                            {isSyncing ? <RefreshCw size={20} className="animate-spin" /> : <Cloud size={20} />}
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
+        )}
 
         {/* Dynamic Content */}
         <div className="relative min-h-[400px]">
