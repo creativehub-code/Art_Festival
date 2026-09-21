@@ -118,11 +118,14 @@ export const useTeams = () => {
 };
 
 export const useParticipants = () => {
-  return useQuery<Participant[]>({
+  return useQuery({
     queryKey: ['participants'],
     queryFn: async () => {
       const data = await apiRequest('/participants');
-      return data.data || data;
+      return {
+        participants: data.data || data,
+        total: data.total ?? (data.data || data).length
+      };
     },
     staleTime: 1 * 60 * 1000, // 1 minute since they change more often
   });

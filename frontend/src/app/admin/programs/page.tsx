@@ -66,7 +66,8 @@ export default function ProgramsPage() {
   // Expandable Row State
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'participants' | 'topics' | 'criteria'>('participants');
-  const { data: participants = [] as any[] } = useParticipants();
+  const { data: participantsRes } = useParticipants();
+  const participants = participantsRes?.participants || [];
 
   /** Sort programs within a language by languagePosition (nulls last), then by name */
   const getProgramsByLanguage = (lang: string) => {
