@@ -174,7 +174,7 @@ export default function ParticipantsPage() {
   const [createPartnerSearchQ, setCreatePartnerSearchQ] = useState('');
   const [createPartnerResults, setCreatePartnerResults] = useState<any[]>([]);
   const [isSearchingCreatePartner, setIsSearchingCreatePartner] = useState(false);
-  const [createGroupPartners, setCreateGroupPartners] = useState<Record<string, { _id: string; name: string; chestNumber: string }>>({});
+  const [createGroupPartners, setCreateGroupPartners] = useState<Record<string, Array<{ _id: string; name: string; chestNumber: string }>>>({});
 
   useEffect(() => {
     const selectedProg = programs.find(p => p._id === form.programId);
@@ -190,7 +190,9 @@ export default function ParticipantsPage() {
         const teamIdStr = typeof form.teamId === 'object' ? (form.teamId as any)._id : form.teamId;
         const groupIdStr = typeof form.groupId === 'object' ? (form.groupId as any)._id : form.groupId;
         const data = await apiRequest(`/participants/search-eligible?q=${safeQuery}&teamId=${teamIdStr}&groupId=${groupIdStr}&programId=${form.programId}`);
-        setCreatePartnerResults(data || []);
+        const selectedCoPartners = createGroupPartners[form.programId] || [];
+        const filtered = (data || []).filter((p: any) => !selectedCoPartners.some(sp => sp._id === p._id));
+        setCreatePartnerResults(filtered);
       } catch (e) {
         console.error(e);
         setCreatePartnerResults(prev => (prev.length === 0 ? prev : []));
@@ -200,7 +202,7 @@ export default function ParticipantsPage() {
     }, 400);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [createPartnerSearchQ, form.programId, form.teamId, form.groupId, programs]);
+  }, [createPartnerSearchQ, form.programId, form.teamId, form.groupId, programs, createGroupPartners]);
 
   const [search, setSearch] = useState('');
   const [filterGroupId, setFilterGroupId] = useState('');
@@ -323,6 +325,38 @@ export default function ParticipantsPage() {
     return () => clearTimeout(delayDebounceFn);
   }, [partnerSearchQ, selectedModalProgramOb?.isConversation, selectedModalProgramOb?._id, viewParticipant?._id, selectedPartners]);
 
+  // Load existing ConversationPair when selecting a conversation program in view modal
+  useEffect(() => {
+    if (!selectedModalProgramOb?.isConversation || !viewParticipant?._id) return;
+
+    let isMounted = true;
+    (async () => {
+      try {
+        const pairs = await apiRequest(`/conversation-pairs/by-program/${selectedModalProgramOb._id}`);
+        if (!isMounted) return;
+        const myPair = pairs.find((cp: any) => 
+          cp.participants.some((p: any) => (p._id || p) === viewParticipant._id)
+        );
+        if (myPair) {
+          const otherMembers = myPair.participants.filter(
+            (p: any) => (p._id || p) !== viewParticipant._id
+          );
+          setSelectedPartners(otherMembers);
+          const primId = myPair.primaryParticipantId?._id || myPair.primaryParticipantId;
+          setOfficialChestId(primId || viewParticipant._id);
+        } else {
+          setOfficialChestId(viewParticipant._id);
+        }
+      } catch (err) {
+        console.error("Failed to load conversation pair details:", err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedModalProgramOb?._id, selectedModalProgramOb?.isConversation, viewParticipant?._id]);
+
   const [isAddingProgramMode, setIsAddingProgramMode] = useState(false);
 
   // Reset add mode when opening new participant
@@ -359,9 +393,9 @@ export default function ParticipantsPage() {
       for (const progId of finalPrograms) {
         const prog = programs.find(p => p._id === progId);
         if (prog?.isConversation) {
-          const partner = createGroupPartners[progId];
-          if (!partner || !partner._id) {
-            addToast({ title: 'Partner Required', message: `Please select a partner for ${prog.name}`, type: 'warning' });
+          const partners = createGroupPartners[progId];
+          if (!partners || partners.length === 0) {
+            addToast({ title: 'Partner Required', message: `Please select at least 1 partner for ${prog.name} (minimum 2 participants total).`, type: 'warning' });
             return;
           }
         }
@@ -377,14 +411,14 @@ export default function ParticipantsPage() {
         .map(pid => ({ programId: pid, topicId: finalSelectedTopics[pid] }));
 
       const groupPartnersPayload = Object.entries(createGroupPartners)
-        .filter(([pid, partner]) => finalPrograms.includes(pid) && partner && partner._id)
-        .map(([pid, partner]) => ({ programId: pid, partnerId: partner._id }));
+        .filter(([pid, partners]) => finalPrograms.includes(pid) && Array.isArray(partners) && partners.length > 0)
+        .map(([pid, partners]) => ({ programId: pid, partnerIds: partners.map(p => p._id) }));
 
       await apiRequest('/participants', 'POST', {
         name: form.name,
         chestNumber: form.chestNumber,
-        teamId: form.teamId,
-        groupId: form.groupId,
+        teamId: form.teamId || undefined,
+        groupId: form.groupId || undefined,
         programs: finalPrograms,
         programTopics,
         groupPartners: groupPartnersPayload,
@@ -615,36 +649,36 @@ export default function ParticipantsPage() {
                                return;
                            }
 
-                           if (selectedProg?.isConversation && !createGroupPartners[form.programId]?._id) {
-                               addToast({ title: 'Partner Required', message: `Please select a partner for ${selectedProg.name}`, type: 'warning' });
-                               return;
-                           }
-                           
-                           if (form.programId && (!form.selectedPrograms.includes(form.programId) || (form.selectedPrograms.includes(form.programId) && form.selectedTopics[form.programId] !== form.topicId))) {
-                             setForm(prev => {
-                               const newSelectedTopics = { ...prev.selectedTopics };
-                               if (prev.topicId) {
-                                   newSelectedTopics[prev.programId] = prev.topicId;
-                               }
-                               const newPrograms = prev.selectedPrograms.includes(prev.programId) 
-                                   ? prev.selectedPrograms 
-                                   : [...prev.selectedPrograms, prev.programId];
-                                   
-                               return {
-                                 ...prev,
-                                 selectedPrograms: newPrograms,
-                                 selectedTopics: newSelectedTopics,
-                                 programId: '',
-                                 topicId: ''
-                               }
-                             });
-                           }
-                         }}
-                         disabled={!form.programId}
-                         className="h-[50px] px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                        <Plus size={18} /> Add
-                    </button>
+                            if (selectedProg?.isConversation && (!createGroupPartners[form.programId] || createGroupPartners[form.programId].length === 0)) {
+                                addToast({ title: 'Partner Required', message: `Please select at least 1 partner for ${selectedProg.name} (minimum 2 participants total).`, type: 'warning' });
+                                return;
+                            }
+                            
+                            if (form.programId && (!form.selectedPrograms.includes(form.programId) || (form.selectedPrograms.includes(form.programId) && form.selectedTopics[form.programId] !== form.topicId))) {
+                              setForm(prev => {
+                                const newSelectedTopics = { ...prev.selectedTopics };
+                                if (prev.topicId) {
+                                    newSelectedTopics[prev.programId] = prev.topicId;
+                                }
+                                const newPrograms = prev.selectedPrograms.includes(prev.programId) 
+                                    ? prev.selectedPrograms 
+                                    : [...prev.selectedPrograms, prev.programId];
+                                    
+                                return {
+                                  ...prev,
+                                  selectedPrograms: newPrograms,
+                                  selectedTopics: newSelectedTopics,
+                                  programId: '',
+                                  topicId: ''
+                                }
+                              });
+                            }
+                          }}
+                          disabled={!form.programId}
+                          className="h-[50px] px-6 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                     >
+                         <Plus size={18} /> Add
+                     </button>
                 </div>
 
                 {/* Partner Required Section for Selected Program */}
@@ -652,9 +686,9 @@ export default function ParticipantsPage() {
                   <div className="w-full bg-[#1A1825] border border-purple-500/30 p-4 rounded-xl space-y-3 animate-in fade-in duration-200">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-purple-300 uppercase tracking-widest flex items-center gap-1.5">
-                        <Users size={14} className="text-purple-400" /> Partner Required <span className="text-red-400">*</span>
+                        <Users size={14} className="text-purple-400" /> Group Participants <span className="text-red-400">*</span>
                       </span>
-                      <span className="text-[11px] text-purple-400/80 italic">Must be from same Team & Group</span>
+                      <span className="text-[11px] text-purple-400/80 italic">Minimum 2 participants total (Must be from same Team & Group)</span>
                     </div>
 
                     {(!form.teamId || !form.groupId) ? (
@@ -662,73 +696,83 @@ export default function ParticipantsPage() {
                         <AlertTriangle size={14} className="shrink-0" />
                         <span>Please select Team and Group in the fields above to search for eligible partners.</span>
                       </div>
-                    ) : createGroupPartners[form.programId] ? (
-                      <div className="flex items-center justify-between p-3 bg-purple-900/40 border border-purple-500/40 rounded-lg text-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-400/30 flex items-center justify-center font-bold text-purple-200 text-xs font-mono">
-                            #{createGroupPartners[form.programId].chestNumber}
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="font-bold text-white text-sm">{createGroupPartners[form.programId].name}</span>
-                            <span className="text-xs text-purple-300/80">Selected Partner</span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCreateGroupPartners(prev => {
-                              const copy = { ...prev };
-                              delete copy[form.programId];
-                              return copy;
-                            });
-                          }}
-                          className="text-xs font-bold px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 rounded-lg transition-colors flex items-center gap-1"
-                        >
-                          <X size={12} /> Remove
-                        </button>
-                      </div>
                     ) : (
-                      <div className="space-y-2">
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                          <input
-                            type="text"
-                            placeholder="Search partner by name or chest number..."
-                            value={createPartnerSearchQ}
-                            onChange={e => setCreatePartnerSearchQ(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0F0D15] border border-gray-700/50 text-white focus:border-purple-500 focus:outline-none text-sm placeholder-gray-600"
-                          />
-                          {isSearchingCreatePartner && (
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                          )}
-                        </div>
-
-                        {createPartnerResults.length > 0 && (
-                          <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto custom-scrollbar p-1 bg-[#0F0D15] border border-gray-700/50 rounded-xl">
-                            {createPartnerResults.map(p => (
-                              <div
-                                key={p._id}
-                                onClick={() => {
-                                  setCreateGroupPartners(prev => ({
-                                    ...prev,
-                                    [form.programId]: { _id: p._id, name: p.name, chestNumber: p.chestNumber }
-                                  }));
-                                  setCreatePartnerSearchQ('');
-                                  setCreatePartnerResults([]);
-                                }}
-                                className="p-2.5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/40 rounded-lg cursor-pointer flex justify-between items-center transition-all text-xs"
-                              >
-                                <div className="flex flex-col">
-                                  <span className="text-white font-medium">{p.name}</span>
-                                  <span className="text-gray-500 text-[10px]">{p.teamId?.name || 'Same Team'} · {p.groupId?.name || 'Same Group'}</span>
+                      <div className="space-y-3">
+                        {/* Currently Selected Co-participants Chips */}
+                        {(createGroupPartners[form.programId] || []).length > 0 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Selected Co-participants ({(createGroupPartners[form.programId] || []).length}):</span>
+                            <div className="flex flex-wrap gap-2">
+                              {(createGroupPartners[form.programId] || []).map((cp) => (
+                                <div key={cp._id} className="flex items-center gap-2 px-3 py-1.5 bg-purple-900/40 border border-purple-500/40 rounded-lg text-sm text-white">
+                                  <span className="font-mono text-xs font-bold text-purple-300">#{cp.chestNumber}</span>
+                                  <span className="font-bold text-xs">{cp.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCreateGroupPartners(prev => ({
+                                        ...prev,
+                                        [form.programId]: (prev[form.programId] || []).filter(p => p._id !== cp._id)
+                                      }));
+                                    }}
+                                    className="text-purple-300 hover:text-red-400 transition-colors ml-1"
+                                    title="Remove participant"
+                                  >
+                                    <X size={13} />
+                                  </button>
                                 </div>
-                                <span className="text-purple-300 font-mono font-bold bg-purple-900/50 px-2 py-0.5 rounded border border-purple-500/30">
-                                  #{p.chestNumber}
-                                </span>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
                         )}
+
+                        {/* Search input for adding co-participants */}
+                        <div className="space-y-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                            <input
+                              type="text"
+                              placeholder="Search participant by name or chest number to add..."
+                              value={createPartnerSearchQ}
+                              onChange={e => setCreatePartnerSearchQ(e.target.value)}
+                              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0F0D15] border border-gray-700/50 text-white focus:border-purple-500 focus:outline-none text-sm placeholder-gray-600"
+                            />
+                            {isSearchingCreatePartner && (
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                            )}
+                          </div>
+
+                          {createPartnerResults.length > 0 && (
+                            <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto custom-scrollbar p-1 bg-[#0F0D15] border border-gray-700/50 rounded-xl">
+                              {createPartnerResults.map(p => (
+                                <div
+                                  key={p._id}
+                                  onClick={() => {
+                                    setCreateGroupPartners(prev => {
+                                      const currentList = prev[form.programId] || [];
+                                      if (currentList.some(item => item._id === p._id)) return prev;
+                                      return {
+                                        ...prev,
+                                        [form.programId]: [...currentList, { _id: p._id, name: p.name, chestNumber: p.chestNumber }]
+                                      };
+                                    });
+                                    setCreatePartnerSearchQ('');
+                                    setCreatePartnerResults([]);
+                                  }}
+                                  className="p-2.5 hover:bg-purple-500/20 border border-transparent hover:border-purple-500/40 rounded-lg cursor-pointer flex justify-between items-center transition-all text-xs"
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-white font-medium">{p.name}</span>
+                                    <span className="text-gray-500 text-[10px]">{p.teamId?.name || 'Same Team'} · {p.groupId?.name || 'Same Group'}</span>
+                                  </div>
+                                  <span className="text-purple-300 font-mono font-bold bg-purple-900/50 px-2 py-0.5 rounded border border-purple-500/30 flex items-center gap-1">
+                                    <Plus size={12} /> #{p.chestNumber}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -739,7 +783,7 @@ export default function ParticipantsPage() {
                     <div className="flex flex-wrap gap-3 mt-2">
                         {form.selectedPrograms.map(progId => {
                             const prog = programs.find(p => p._id === progId);
-                            const partner = createGroupPartners[progId];
+                            const partners = createGroupPartners[progId] || [];
                             return (
                                 <div key={progId} className="flex flex-col gap-1.5 bg-purple-900/30 text-purple-200 border border-purple-500/30 px-4 py-2.5 rounded-lg text-sm group hover:border-purple-400 transition-colors">
                                     <div className="flex items-center gap-3 justify-between">
@@ -747,7 +791,7 @@ export default function ParticipantsPage() {
                                             <span className="font-medium">{prog?.name || 'Unknown Program'}</span>
                                             {prog?.isConversation && (
                                                 <span className="bg-purple-900/60 border border-purple-500/40 text-purple-300 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                                                    Group
+                                                    Group ({partners.length + 1} members)
                                                 </span>
                                             )}
                                         </div>
@@ -777,10 +821,10 @@ export default function ParticipantsPage() {
                                     {prog?.isConversation && (
                                         <div className="text-xs text-purple-200 flex items-center gap-1.5 font-medium bg-purple-950/60 px-2.5 py-1 rounded border border-purple-500/30">
                                             <Users size={12} className="text-purple-400 shrink-0" />
-                                            {partner ? (
-                                                <span>Partner: <strong className="text-white">#{partner.chestNumber} {partner.name}</strong></span>
+                                            {partners.length > 0 ? (
+                                                <span>Co-participants: <strong className="text-white">{partners.map(p => `#${p.chestNumber} ${p.name}`).join(', ')}</strong></span>
                                             ) : (
-                                                <span className="text-amber-300 font-bold italic">Partner Missing!</span>
+                                                <span className="text-amber-300 font-bold italic">Co-participants Missing!</span>
                                             )}
                                         </div>
                                     )}
@@ -1496,7 +1540,6 @@ export default function ParticipantsPage() {
                                                                 <button 
                                                                     onClick={() => {
                                                                         setSelectedPartners(prev => prev.filter(sp => sp._id !== p._id));
-                                                                        if (officialChestId === p._id) setOfficialChestId(viewParticipant._id);
                                                                     }}
                                                                     className="text-indigo-400 hover:text-white"
                                                                 >
@@ -1505,24 +1548,6 @@ export default function ParticipantsPage() {
                                                             </div>
                                                         </div>
                                                     ))}
-                                                </div>
-
-                                                <div className="bg-[#13111C]/50 p-4 rounded-xl border border-indigo-500/20">
-                                                    <p className="text-xs text-gray-400 mb-3 uppercase font-bold tracking-wider">Select Official Chest Number:</p>
-                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                        {[viewParticipant, ...selectedPartners].map(p => (
-                                                            <label key={p._id} className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition-all ${officialChestId === p._id ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-300' : 'bg-[#181525] border-[#2D283E] text-gray-500 hover:border-gray-600'}`}>
-                                                                <input type="radio" value={p._id} checked={officialChestId === p._id} onChange={() => setOfficialChestId(p._id)} className="hidden" />
-                                                                <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${officialChestId === p._id ? 'border-indigo-400' : 'border-gray-500'}`}>
-                                                                    {officialChestId === p._id && <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />}
-                                                                </div>
-                                                                <span className="font-mono text-xs font-bold leading-none">
-                                                                    {p.chestNumber}
-                                                                    <span className="text-[10px] block font-normal opacity-60 truncate max-w-[60px]">{p.name.split(' ')[0]}</span>
-                                                                </span>
-                                                            </label>
-                                                        ))}
-                                                    </div>
                                                 </div>
                                             </div>
                                         )}
@@ -1535,7 +1560,6 @@ export default function ParticipantsPage() {
                                         
                                         if (selectedModalProgramOb?.isConversation) {
                                             if (selectedPartners.length === 0) return addToast({ title: 'Partner Required', message: "Please select at least one partner for this Conversation program.", type: 'warning' });
-                                            if (!officialChestId) return addToast({ title: 'Chest Number Required', message: "Please choose the official chest number for the group.", type: 'warning' });
                                         }
 
                                         try {
@@ -1543,7 +1567,7 @@ export default function ParticipantsPage() {
                                                 await apiRequest('/conversation-pairs', 'POST', {
                                                     programId: selectedModalProgramOb._id,
                                                     participantIds: [viewParticipant._id, ...selectedPartners.map(p => p._id)],
-                                                    primaryParticipantId: officialChestId,
+                                                    primaryParticipantId: viewParticipant._id,
                                                     topicId: programForm.topicId || undefined
                                                 });
                                             } else {
@@ -1598,7 +1622,7 @@ export default function ParticipantsPage() {
                                             addToast({ title: 'Error', message: e.message, type: 'error' });
                                         }
                                     }}
-                                    disabled={selectedModalProgramOb?.isConversation && (selectedPartners.length === 0 || !officialChestId)}
+                                    disabled={selectedModalProgramOb?.isConversation && selectedPartners.length === 0}
                                     className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold shadow-xl shadow-green-900/20 text-lg flex items-center justify-center gap-2 mt-4"
                                 >
                                     <Save size={18} /> {selectedModalProgramOb?.isConversation ? 'Save Conversation Pair' : 'Save & Add Programs'}

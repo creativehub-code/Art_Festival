@@ -35,6 +35,7 @@ export default function ProgramsPage() {
   };
 
   const handleDelete = (id: string) => {
+    if (isDeleting) return;
     setDeleteConfirmId(id);
   };
 
@@ -43,7 +44,7 @@ export default function ProgramsPage() {
     setIsDeleting(true);
     try {
       await apiRequest(`/programs/${deleteConfirmId}`, 'DELETE');
-      invalidatePrograms();
+      await invalidatePrograms();
       addToast({ title: 'Program Deleted', message: 'Program deleted successfully.', type: 'info' });
       setDeleteConfirmId(null);
     } catch (e: any) { 

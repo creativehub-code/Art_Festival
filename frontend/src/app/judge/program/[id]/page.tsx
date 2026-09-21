@@ -48,12 +48,34 @@ export default function ProgramMarkingPage() {
         if (currentProg?.isConversation) {
           try {
             const pairs = await apiRequest(`/conversation-pairs/by-program/${programId}`);
-            finalParticipants = pairs.map((pair: any) => ({
-              _id: pair.primaryParticipantId._id || pair.primaryParticipantId,
-              chestNumber: pair.primaryParticipantId.chestNumber || parts.find((p: any) => p._id === pair.primaryParticipantId)?.chestNumber,
-              name: pair.participants.map((p: any) => p.name || parts.find((f: any) => f._id === p)?.name).join(' & '),
-              programTopics: pair.primaryParticipantId.programTopics || parts.find((p: any) => p._id === pair.primaryParticipantId)?.programTopics || []
-            }));
+            finalParticipants = pairs.map((pair: any) => {
+              const pairParts = pair.participants || [];
+              const chestNumbers: string[] = [];
+
+              pairParts.forEach((p: any) => {
+                const cNo = p.chestNumber || parts.find((f: any) => String(f._id) === String(p._id || p))?.chestNumber;
+                if (cNo != null && cNo !== '' && !chestNumbers.includes(String(cNo))) {
+                  chestNumbers.push(String(cNo));
+                }
+              });
+
+              if (pair.primaryParticipantId) {
+                const primCNo = pair.primaryParticipantId.chestNumber || parts.find((f: any) => String(f._id) === String(pair.primaryParticipantId._id || pair.primaryParticipantId))?.chestNumber;
+                if (primCNo != null && primCNo !== '' && !chestNumbers.includes(String(primCNo))) {
+                  chestNumbers.push(String(primCNo));
+                }
+              }
+
+              const displayChestNumber = chestNumbers.join(', ');
+              const primaryId = pair.primaryParticipantId?._id || pair.primaryParticipantId || (pairParts[0]?._id || pairParts[0]);
+
+              return {
+                _id: primaryId,
+                chestNumber: displayChestNumber,
+                name: pairParts.map((p: any) => p.name || parts.find((f: any) => String(f._id) === String(p._id || p))?.name).join(' & '),
+                programTopics: pair.primaryParticipantId?.programTopics || parts.find((p: any) => String(p._id) === String(primaryId))?.programTopics || []
+              };
+            });
           } catch (e) {
             console.error("Error fetching conversation pairs", e);
           }
@@ -317,27 +339,26 @@ export default function ProgramMarkingPage() {
           </div>
         </div>
 
-        {/* Evaluation Summary Stats */}
-        <div className="flex items-center gap-2 sm:gap-3 bg-[#13111C] p-2 rounded-2xl border border-[#2D283E] shadow-sm text-xs">
-          <div className="px-3.5 py-1.5 rounded-xl bg-[#1E1B2E] border border-gray-800 text-center">
-            <span className="text-gray-400 text-[10px] uppercase font-bold block">Total</span>
-            <span className="text-white font-bold text-base">{stats.total}</span>
+        {/* Evaluation Summary Stats Row */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center divide-x divide-[#2D283E] border border-[#2D283E] bg-[#13111C]/40 rounded-xl px-1 py-1.5 sm:px-3 sm:py-2 w-full lg:w-auto">
+          <div className="flex-1 sm:flex-initial px-3 sm:px-4 py-1 text-center sm:text-left min-w-[75px]">
+            <span className="text-gray-400 text-[10px] sm:text-[11px] uppercase font-bold tracking-wider block">Total</span>
+            <span className="text-white font-mono text-base sm:text-lg font-bold block mt-0.5">{stats.total}</span>
           </div>
-          <div className="px-3.5 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20 text-center">
-            <span className="text-green-400 text-[10px] uppercase font-bold block flex items-center justify-center gap-1">
-              <CheckCircle2 size={10} /> Marked
-            </span>
-            <span className="text-green-400 font-bold text-base">{stats.evaluated}</span>
+
+          <div className="flex-1 sm:flex-initial px-3 sm:px-4 py-1 text-center sm:text-left min-w-[75px]">
+            <span className="text-gray-400 text-[10px] sm:text-[11px] uppercase font-bold tracking-wider block">Marked</span>
+            <span className="text-white font-mono text-base sm:text-lg font-bold block mt-0.5">{stats.evaluated}</span>
           </div>
-          <div className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
-            <span className="text-amber-400 text-[10px] uppercase font-bold block flex items-center justify-center gap-1">
-              <Clock size={10} /> Pending
-            </span>
-            <span className="text-amber-400 font-bold text-base">{stats.pending}</span>
+
+          <div className="flex-1 sm:flex-initial px-3 sm:px-4 py-1 text-center sm:text-left min-w-[75px]">
+            <span className="text-gray-400 text-[10px] sm:text-[11px] uppercase font-bold tracking-wider block">Pending</span>
+            <span className="text-white font-mono text-base sm:text-lg font-bold block mt-0.5">{stats.pending}</span>
           </div>
-          <div className="px-3.5 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-center">
-            <span className="text-purple-400 text-[10px] uppercase font-bold block">Max Marks</span>
-            <span className="text-purple-300 font-bold text-base">{program?.maxMarks}</span>
+
+          <div className="flex-1 sm:flex-initial px-3 sm:px-4 py-1 text-center sm:text-left min-w-[75px]">
+            <span className="text-gray-400 text-[10px] sm:text-[11px] uppercase font-bold tracking-wider block">Max Marks</span>
+            <span className="text-white font-mono text-base sm:text-lg font-bold block mt-0.5">{program?.maxMarks}</span>
           </div>
         </div>
       </div>
@@ -412,24 +433,18 @@ export default function ProgramMarkingPage() {
                 const hasCriteria = Boolean(program?.criteriaEnabled && program?.criteria && program.criteria.length > 0);
                 
                 return (
-                  <tr key={p._id} className="hover:bg-white/[0.02] transition-colors group">
-                    <td className="p-4 align-middle">
-                      <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl bg-[#13111C] border border-gray-700/80 text-purple-300 font-mono text-sm font-bold shadow-inner">
-                        {p.chestNumber}
-                      </span>
+                  <tr key={p._id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 align-middle font-mono text-sm font-bold text-purple-300">
+                      {p.chestNumber}
                     </td>
-                    <td className="p-4 align-middle text-gray-200 font-medium">
-                      <div className="flex items-center gap-2.5">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold border ${
-                          topicTitle === 'No topic assigned'
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            : 'bg-purple-500/10 text-purple-300 border-purple-500/20'
-                        }`}>
-                          <BookOpen size={12} /> {topicTitle}
+                    <td className="py-3 px-4 align-middle text-sm font-medium">
+                      <div className="flex items-center gap-2">
+                        <span className={topicTitle === 'No topic assigned' ? 'text-gray-500 italic text-xs' : 'text-gray-200'}>
+                          {topicTitle}
                         </span>
-                        {rank === 1 && <span className="flex items-center gap-1 text-[10px] font-bold bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30"><Trophy size={11} fill="currentColor" /> 1ST</span>}
-                        {rank === 2 && <span className="flex items-center gap-1 text-[10px] font-bold bg-gray-400/20 text-gray-300 px-2 py-0.5 rounded-full border border-gray-400/30"><Medal size={11} /> 2ND</span>}
-                        {rank === 3 && <span className="flex items-center gap-1 text-[10px] font-bold bg-orange-700/20 text-orange-400 px-2 py-0.5 rounded-full border border-orange-700/30"><Medal size={11} /> 3RD</span>}
+                        {rank === 1 && <span className="text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded border border-yellow-500/20">1ST</span>}
+                        {rank === 2 && <span className="text-[10px] font-bold text-gray-300 bg-gray-400/10 px-1.5 py-0.5 rounded border border-gray-400/20">2ND</span>}
+                        {rank === 3 && <span className="text-[10px] font-bold text-orange-400 bg-orange-700/10 px-1.5 py-0.5 rounded border border-orange-700/20">3RD</span>}
                       </div>
                     </td>
                     
@@ -438,7 +453,7 @@ export default function ProgramMarkingPage() {
                         {program.criteria.map((crit: any) => {
                           const pCritValue = criteriaMarksState[p._id]?.[crit._id];
                           return (
-                            <td key={crit._id} className="p-4 align-middle text-center">
+                            <td key={crit._id} className="py-3 px-4 align-middle text-center">
                               {isLocked ? (
                                 <span className="font-mono text-sm font-bold text-gray-200">
                                   {criteriaMarksState[p._id]?.[crit._id] ?? 0}
@@ -450,7 +465,7 @@ export default function ProgramMarkingPage() {
                                     type="number"
                                     min="0"
                                     max={crit.maxMarks}
-                                    className="bg-[#0F0D17] border border-gray-700/70 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/40 rounded-xl p-1.5 w-16 text-white text-xs text-center font-mono font-bold outline-none transition-all placeholder-gray-600"
+                                    className="bg-[#0F0D17] border border-gray-700/70 focus:border-purple-500 rounded-lg p-1.5 w-16 text-white text-xs text-center font-mono font-bold outline-none transition-all placeholder-gray-600"
                                     placeholder="-"
                                     value={pCritValue !== undefined ? pCritValue : ''}
                                     onChange={(e) => handleCriterionMarkChange(p._id, crit._id, e.target.value, crit.maxMarks)}
@@ -462,33 +477,26 @@ export default function ProgramMarkingPage() {
                             </td>
                           );
                         })}
-                        <td className="p-4 align-middle text-right">
-                          <span className="font-mono text-sm font-bold text-white bg-purple-500/10 px-3 py-1.5 rounded-xl border border-purple-500/20 inline-block">
-                            {marks[p._id] !== undefined ? marks[p._id] : 0} / {program?.maxMarks}
-                          </span>
+                        <td className="py-3 px-4 align-middle text-right font-mono text-sm font-bold text-white">
+                          {marks[p._id] !== undefined ? marks[p._id] : 0} / {program?.maxMarks}
                         </td>
                       </>
                     ) : (
-                      <td className="p-4 align-middle text-right">
+                      <td className="py-3 px-4 align-middle text-right">
                         {isLocked ? (
-                          <div className="flex items-center justify-end gap-2 text-green-400 font-bold bg-green-400/10 px-3 py-1.5 rounded-xl w-fit ml-auto border border-green-500/20 font-mono text-sm">
+                          <div className="flex items-center justify-end gap-1.5 text-green-400 font-mono text-sm font-bold">
                             <span>{marks[p._id]} / {program?.maxMarks}</span>
-                            <span className="text-[10px] opacity-70 uppercase tracking-wide flex items-center gap-1">
-                              <CheckCircle2 size={10} /> Submitted
+                            <span className="text-[10px] text-green-400/80 font-semibold uppercase tracking-wider flex items-center gap-0.5 ml-1">
+                              <CheckCircle2 size={11} /> Submitted
                             </span>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1.5">
                             <input
                               type="number"
                               min="0"
                               max={program?.maxMarks}
-                              className={`bg-[#0F0D17] border rounded-xl p-2.5 w-24 text-white focus:outline-none transition-all font-mono text-center text-sm font-bold
-                                ${rank === 1 ? 'border-yellow-500/50 focus:border-yellow-500 ring-yellow-500/20' : 
-                                  rank === 2 ? 'border-gray-500/50 focus:border-gray-500 ring-gray-500/20' :
-                                  rank === 3 ? 'border-orange-500/50 focus:border-orange-500 ring-orange-500/20' :
-                                  'border-gray-700/70 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/40'}
-                              `}
+                              className="bg-[#0F0D17] border border-gray-700/70 focus:border-purple-500 rounded-lg p-2 w-20 text-white text-sm text-center font-mono font-bold outline-none transition-all placeholder-gray-600"
                               placeholder="-"
                               value={marks[p._id] !== undefined ? marks[p._id] : ''}
                               onChange={(e) => {

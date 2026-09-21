@@ -464,6 +464,20 @@ const getMarksByProgram = async (req, res) => {
 const recalculateProgramScoresInternal = async (programId, session = null, options = {}) => {
   const { force = false } = options;
 
+  // Fallback wrapper: if caller did not provide a session, wrap in a transaction session
+  if (!session) {
+    const createdSession = await mongoose.startSession();
+    try {
+      let result;
+      await createdSession.withTransaction(async () => {
+        result = await recalculateProgramScoresInternal(programId, createdSession, options);
+      });
+      return result;
+    } finally {
+      await createdSession.endSession();
+    }
+  }
+
   const programQuery = Program.findById(programId);
   if (session) programQuery.session(session);
   const program = await programQuery;
@@ -483,14 +497,7 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
   if (session) marksQuery.session(session);
   const marks = await marksQuery;
 
-  // 2. Clear old program results for this program
-  if (session) {
-    await ProgramResult.deleteMany({ programId }, { session });
-  } else {
-    await ProgramResult.deleteMany({ programId });
-  }
-
-  // 3. Enrich positionAwards with participantIds and teamId
+  // 2. Fetch ConversationPairs if isConversation === true
   let pairs = [];
   if (program.isConversation) {
     const pairsQuery = ConversationPair.find({ programId });
@@ -498,7 +505,7 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     pairs = await pairsQuery;
   }
 
-  // Aggregate marks for each participant or conversation pair unit in THIS program
+  // 3. Aggregate marks for each participant or conversation pair unit in THIS program
   const programScores = {};
   if (program.isConversation && pairs.length > 0) {
     const pIdToPrimary = {};
@@ -607,6 +614,9 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     };
   });
 
+  // Calculate & enrich awards in memory BEFORE clearing old records and inserting new ones
+  await ProgramResult.deleteMany({ programId }, session ? { session } : {});
+
   if (enrichedAwards.length > 0) {
     if (session) {
       await ProgramResult.insertMany(enrichedAwards, { session });
@@ -647,9 +657,8 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     const updatePartQuery = Participant.findByIdAndUpdate(
       partId,
       { totalScore: totalPositionScore },
-      { new: true }
+      { new: true, ...(session ? { session } : {}) }
     );
-    if (session) updatePartQuery.session(session);
     const updatedParticipant = await updatePartQuery;
 
     if (updatedParticipant && updatedParticipant.teamId) {
@@ -669,8 +678,7 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
       0,
     );
 
-    const updateTeamQuery = Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore });
-    if (session) updateTeamQuery.session(session);
+    const updateTeamQuery = Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore }, session ? { session } : {});
     await updateTeamQuery;
   }
 
@@ -974,6 +982,7 @@ const getAllExportData = async (req, res) => {
 // @route   PATCH /api/marks/:id/status
 // @access  Admin
 const updateMarkStatus = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -982,49 +991,60 @@ const updateMarkStatus = async (req, res) => {
       return res.status(400).json({ message: "Invalid status." });
     }
 
-    const mark = await JudgeMark.findById(id);
-    if (!mark) {
-      return res.status(404).json({ message: "Mark not found." });
-    }
+    let updatedMark = null;
 
-    const updateFields = { status };
-    if (status === "approved") {
-      updateFields.submitted = true;
-    }
+    await session.withTransaction(async () => {
+      const mark = await JudgeMark.findById(id).session(session);
+      if (!mark) {
+        throw new Error("MARK_NOT_FOUND");
+      }
 
-    mark.status = status;
-    if (status === "approved") {
-      mark.submitted = true;
-    }
-    await mark.save();
+      const updateFields = { status };
+      if (status === "approved") {
+        updateFields.submitted = true;
+      }
 
-    // Group program auto-mirroring: if participant belongs to a ConversationPair group, update status for all members
-    const group = await ConversationPair.findOne({
-      programId: mark.programId,
-      participants: mark.participantId,
+      mark.status = status;
+      if (status === "approved") {
+        mark.submitted = true;
+      }
+      await mark.save({ session });
+      updatedMark = mark;
+
+      // Group program auto-mirroring: if participant belongs to a ConversationPair group, update status for all members
+      const group = await ConversationPair.findOne({
+        programId: mark.programId,
+        participants: mark.participantId,
+      }).session(session);
+
+      if (group && group.participants && group.participants.length > 1) {
+        const otherMemberIds = group.participants.filter(
+          (pId) => pId.toString() !== mark.participantId.toString()
+        );
+
+        await JudgeMark.updateMany(
+          {
+            judgeId: mark.judgeId,
+            programId: mark.programId,
+            participantId: { $in: otherMemberIds },
+          },
+          { $set: updateFields },
+          { session }
+        );
+      }
+
+      // Recalculate program scores and rankings if results exist or program is completed
+      await recalculateProgramScoresInternal(mark.programId, session);
     });
 
-    if (group && group.participants && group.participants.length > 1) {
-      const otherMemberIds = group.participants.filter(
-        (pId) => pId.toString() !== mark.participantId.toString()
-      );
-
-      await JudgeMark.updateMany(
-        {
-          judgeId: mark.judgeId,
-          programId: mark.programId,
-          participantId: { $in: otherMemberIds },
-        },
-        { $set: updateFields }
-      );
-    }
-
-    // Recalculate program scores and rankings if results exist or program is completed
-    await recalculateProgramScoresInternal(mark.programId);
-
-    res.json({ message: `Mark ${status} successfully.`, mark });
+    res.json({ message: `Mark ${status} successfully.`, mark: updatedMark });
   } catch (error) {
+    if (error.message === "MARK_NOT_FOUND") {
+      return res.status(404).json({ message: "Mark not found." });
+    }
     sendError(res, 500, "Error updating mark status", error);
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -1307,6 +1327,7 @@ module.exports = {
   editApprovedMark,
   getReviewPrograms,
   getReviewProgramDetail,
+  recalculateProgramScoresInternal,
 };
 
 
