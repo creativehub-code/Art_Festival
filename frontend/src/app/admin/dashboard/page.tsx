@@ -36,11 +36,11 @@ export default function AdminDashboard() {
   const { data: programs = [] } = usePrograms();
   const { data: teams = [] } = useTeams();
   const { data: groups = [] } = useGroups();
-  const { data: participants = [] } = useParticipants();
+  const { data: participantsRes } = useParticipants();
   const { invalidatePrograms } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
   const refreshPrograms = invalidatePrograms;
-  const participantCount = participants?.length ?? 0;
+  const participantCount = participantsRes?.total ?? 0;
   
   const [selectedLanguage, setSelectedLanguage] = useState('All');
   const [isProgramsVisible, setIsProgramsVisible] = useState(true);
