@@ -3,7 +3,11 @@ const Participant = require("../models/Participant");
 const Team = require("../models/Team");
 const Group = require("../models/Group");
 const ConversationPair = require("../models/ConversationPair");
+const JudgeMark = require("../models/JudgeMark");
+const ProgramResult = require("../models/ProgramResult");
+const MarkAuditLog = require("../models/MarkAuditLog");
 const sendError = require("../utils/errorResponse");
+const { recalculateProgramScoresInternal } = require("./markController");
 
 function escapeRegex(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -210,7 +214,9 @@ const getParticipantPhoto = async (req, res) => {
 const createParticipant = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { name, chestNumber, teamId, groupId, programs, programTopics, groupPartners } = req.body;
+    const { name, chestNumber, programs, programTopics, groupPartners } = req.body;
+    const teamId = req.body.teamId || undefined;
+    const groupId = req.body.groupId || undefined;
 
     let validProgramTopics = [];
     if (programTopics && Array.isArray(programTopics) && programTopics.length > 0) {
@@ -262,42 +268,61 @@ const createParticipant = async (req, res) => {
     const partnerMap = new Map();
     if (Array.isArray(groupPartners)) {
       groupPartners.forEach(gp => {
-        if (gp.programId && gp.partnerId) partnerMap.set(gp.programId.toString(), gp.partnerId.toString());
+        if (gp.programId) {
+          let pIds = [];
+          if (Array.isArray(gp.partnerIds)) pIds = gp.partnerIds.map(id => id.toString());
+          else if (Array.isArray(gp.partnerId)) pIds = gp.partnerId.map(id => id.toString());
+          else if (gp.partnerId) pIds = [gp.partnerId.toString()];
+          partnerMap.set(gp.programId.toString(), pIds);
+        }
       });
     } else if (groupPartners && typeof groupPartners === 'object') {
-      Object.entries(groupPartners).forEach(([pid, partnerId]) => {
-        if (partnerId) partnerMap.set(pid.toString(), partnerId.toString());
+      Object.entries(groupPartners).forEach(([pid, val]) => {
+        let pIds = [];
+        if (Array.isArray(val)) pIds = val.map(id => id.toString());
+        else if (val && typeof val === 'object' && Array.isArray(val.partnerIds)) pIds = val.partnerIds.map(id => id.toString());
+        else if (val) pIds = [val.toString()];
+        partnerMap.set(pid.toString(), pIds);
       });
     }
 
+    const validatedGroupPairs = [];
     for (const gp of groupPrograms) {
       const gpIdStr = gp._id.toString();
-      const partnerId = partnerMap.get(gpIdStr);
-      if (!partnerId) {
-        return res.status(400).json({ message: `Group program '${gp.name}' requires a partner participant.` });
+      const partnerIds = partnerMap.get(gpIdStr) || [];
+      if (partnerIds.length === 0) {
+        return res.status(400).json({ message: `Group program '${gp.name}' requires at least 1 partner participant (minimum 2 total).` });
       }
 
-      const partner = await Participant.findById(partnerId);
-      if (!partner) {
-        return res.status(400).json({ message: `Partner for group program '${gp.name}' not found.` });
+      if (new Set(partnerIds).size !== partnerIds.length) {
+        return res.status(400).json({ message: `Duplicate partner selected for group program '${gp.name}'.` });
       }
 
-      if (partner.teamId?.toString() !== teamId?.toString()) {
-        return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Team.` });
+      for (const partnerId of partnerIds) {
+        const partner = await Participant.findById(partnerId);
+        if (!partner) {
+          return res.status(400).json({ message: `Partner for group program '${gp.name}' not found.` });
+        }
+
+        if (partner.teamId?.toString() !== teamId?.toString()) {
+          return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Team.` });
+        }
+
+        if (partner.groupId?.toString() !== groupId?.toString()) {
+          return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Group.` });
+        }
+
+        // Check if partner is already registered in a ConversationPair for this program
+        const existingPair = await ConversationPair.findOne({
+          programId: gp._id,
+          participants: partner._id,
+        });
+        if (existingPair) {
+          return res.status(400).json({ message: `Partner ${partner.name} is already paired in another group for program '${gp.name}'.` });
+        }
       }
 
-      if (partner.groupId?.toString() !== groupId?.toString()) {
-        return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Group.` });
-      }
-
-      // Check if partner is already registered in a ConversationPair for this program
-      const existingPair = await ConversationPair.findOne({
-        programId: gp._id,
-        participants: partner._id,
-      });
-      if (existingPair) {
-        return res.status(400).json({ message: `Partner ${partner.name} is already paired in another group for program '${gp.name}'.` });
-      }
+      validatedGroupPairs.push({ gp, partnerIds });
     }
 
     let participant;
@@ -316,40 +341,39 @@ const createParticipant = async (req, res) => {
       participant = await newParticipant.save({ session });
 
       // Handle ConversationPair creation for Group Programs
-      for (const gp of groupPrograms) {
+      for (const item of validatedGroupPairs) {
+        const { gp, partnerIds } = item;
         const gpIdStr = gp._id.toString();
-        const partnerId = partnerMap.get(gpIdStr);
 
         const topicObj = validProgramTopics.find(pt => pt.programId.toString() === gpIdStr);
         const topicId = topicObj ? topicObj.topicId : null;
 
         await ConversationPair.create([{
           programId: gp._id,
-          participants: [participant._id, partnerId],
+          participants: [participant._id, ...partnerIds],
           primaryParticipantId: participant._id,
           teamId,
           groupId,
           topicId,
         }], { session });
 
-        await Participant.findByIdAndUpdate(
-          partnerId,
+        await Participant.updateMany(
+          { _id: { $in: partnerIds } },
           { $addToSet: { programs: gp._id } },
           { session }
         );
 
         if (topicId) {
-          const partnerDoc = await Participant.findById(partnerId).session(session);
-          if (partnerDoc) {
-            let pTopics = [...(partnerDoc.programTopics || [])];
-            const existingIdx = pTopics.findIndex(t => t.programId && t.programId.toString() === gpIdStr);
-            if (existingIdx !== -1) {
-              pTopics.splice(existingIdx, 1);
-            }
-            pTopics.push({ programId: gp._id, topicId });
-            partnerDoc.programTopics = pTopics;
-            await partnerDoc.save({ session });
-          }
+          await Participant.updateMany(
+            { _id: { $in: partnerIds } },
+            { $pull: { programTopics: { programId: gp._id } } },
+            { session }
+          );
+          await Participant.updateMany(
+            { _id: { $in: partnerIds } },
+            { $push: { programTopics: { programId: gp._id, topicId } } },
+            { session }
+          );
         }
       }
     });
@@ -375,7 +399,9 @@ const updateParticipant = async (req, res) => {
     }
 
     // Security: Whitelist fields to prevent mass assignment
-    const { name, chestNumber, teamId, groupId, programs, programTopics, image, groupPartners } = req.body;
+    const { name, chestNumber, programs, programTopics, image, groupPartners } = req.body;
+    const teamId = req.body.teamId || undefined;
+    const groupId = req.body.groupId || undefined;
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (chestNumber !== undefined) updateData.chestNumber = chestNumber;
@@ -433,11 +459,21 @@ const updateParticipant = async (req, res) => {
     const partnerMap = new Map();
     if (Array.isArray(groupPartners)) {
       groupPartners.forEach(gp => {
-        if (gp.programId && gp.partnerId) partnerMap.set(gp.programId.toString(), gp.partnerId.toString());
+        if (gp.programId) {
+          let pIds = [];
+          if (Array.isArray(gp.partnerIds)) pIds = gp.partnerIds.map(id => id.toString());
+          else if (Array.isArray(gp.partnerId)) pIds = gp.partnerId.map(id => id.toString());
+          else if (gp.partnerId) pIds = [gp.partnerId.toString()];
+          partnerMap.set(gp.programId.toString(), pIds);
+        }
       });
     } else if (groupPartners && typeof groupPartners === 'object') {
-      Object.entries(groupPartners).forEach(([pid, partnerId]) => {
-        if (partnerId) partnerMap.set(pid.toString(), partnerId.toString());
+      Object.entries(groupPartners).forEach(([pid, val]) => {
+        let pIds = [];
+        if (Array.isArray(val)) pIds = val.map(id => id.toString());
+        else if (val && typeof val === 'object' && Array.isArray(val.partnerIds)) pIds = val.partnerIds.map(id => id.toString());
+        else if (val) pIds = [val.toString()];
+        partnerMap.set(pid.toString(), pIds);
       });
     }
 
@@ -448,64 +484,104 @@ const updateParticipant = async (req, res) => {
     for (const gp of groupPrograms) {
       const gpIdStr = gp._id.toString();
       const existingPair = existingPairByProg.get(gpIdStr);
-      const incomingPartnerId = partnerMap.get(gpIdStr);
+      let incomingPartnerIds = partnerMap.get(gpIdStr);
 
       if (existingPair) {
-        const currentPartnerId = existingPair.participants.find(p => p.toString() !== participant._id.toString())?.toString();
-        if (!incomingPartnerId || incomingPartnerId === currentPartnerId) {
-          validatedPairsToProcess.push({ gp, partnerId: currentPartnerId, existingPair, isNew: false });
-          continue;
+        if (!incomingPartnerIds) {
+          incomingPartnerIds = existingPair.participants
+            .filter(p => p.toString() !== participant._id.toString())
+            .map(p => p.toString());
         }
 
-        // Partner changed
-        const partner = await Participant.findById(incomingPartnerId);
-        if (!partner) {
-          return res.status(400).json({ message: `Partner for group program '${gp.name}' not found.` });
+        if (incomingPartnerIds.length === 0) {
+          return res.status(400).json({ message: `Group program '${gp.name}' requires at least 1 partner participant (minimum 2 total).` });
         }
-        if (partner._id.toString() === participant._id.toString()) {
+
+        if (new Set(incomingPartnerIds).size !== incomingPartnerIds.length) {
+          return res.status(400).json({ message: `Duplicate partner selected for group program '${gp.name}'.` });
+        }
+
+        if (incomingPartnerIds.includes(participant._id.toString())) {
           return res.status(400).json({ message: `Cannot select participant as their own partner.` });
         }
-        if (partner.teamId?.toString() !== finalTeamId?.toString()) {
-          return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Team.` });
+
+        for (const partnerId of incomingPartnerIds) {
+          const partner = await Participant.findById(partnerId);
+          if (!partner) {
+            return res.status(400).json({ message: `Partner for group program '${gp.name}' not found.` });
+          }
+          if (partner.teamId?.toString() !== finalTeamId?.toString()) {
+            return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Team.` });
+          }
+          if (partner.groupId?.toString() !== finalGroupId?.toString()) {
+            return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Group.` });
+          }
+          const otherPair = await ConversationPair.findOne({
+            programId: gp._id,
+            participants: partner._id,
+            _id: { $ne: existingPair._id }
+          });
+          if (otherPair) {
+            return res.status(400).json({ message: `Partner ${partner.name} is already paired in another group for program '${gp.name}'.` });
+          }
         }
-        if (partner.groupId?.toString() !== finalGroupId?.toString()) {
-          return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Group.` });
-        }
-        const otherPair = await ConversationPair.findOne({
-          programId: gp._id,
-          participants: partner._id,
-          _id: { $ne: existingPair._id }
+
+        const oldPartnerIds = existingPair.participants
+          .filter(p => p.toString() !== participant._id.toString())
+          .map(p => p.toString());
+
+        const addedPartnerIds = incomingPartnerIds.filter(id => !oldPartnerIds.includes(id));
+        const removedPartnerIds = oldPartnerIds.filter(id => !incomingPartnerIds.includes(id));
+
+        validatedPairsToProcess.push({
+          gp,
+          partnerIds: incomingPartnerIds,
+          existingPair,
+          isNew: false,
+          addedPartnerIds,
+          removedPartnerIds,
         });
-        if (otherPair) {
-          return res.status(400).json({ message: `Partner ${partner.name} is already paired in another group for program '${gp.name}'.` });
-        }
-        validatedPairsToProcess.push({ gp, partnerId: incomingPartnerId, existingPair, isNew: false, partnerChanged: true, oldPartnerId: currentPartnerId });
       } else {
         // Newly added Group Program
-        if (!incomingPartnerId) {
-          return res.status(400).json({ message: `Group program '${gp.name}' requires a partner participant.` });
+        if (!incomingPartnerIds || incomingPartnerIds.length === 0) {
+          return res.status(400).json({ message: `Group program '${gp.name}' requires at least 1 partner participant (minimum 2 total).` });
         }
-        const partner = await Participant.findById(incomingPartnerId);
-        if (!partner) {
-          return res.status(400).json({ message: `Partner for group program '${gp.name}' not found.` });
+
+        if (new Set(incomingPartnerIds).size !== incomingPartnerIds.length) {
+          return res.status(400).json({ message: `Duplicate partner selected for group program '${gp.name}'.` });
         }
-        if (partner._id.toString() === participant._id.toString()) {
+
+        if (incomingPartnerIds.includes(participant._id.toString())) {
           return res.status(400).json({ message: `Cannot select participant as their own partner.` });
         }
-        if (partner.teamId?.toString() !== finalTeamId?.toString()) {
-          return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Team.` });
+
+        for (const partnerId of incomingPartnerIds) {
+          const partner = await Participant.findById(partnerId);
+          if (!partner) {
+            return res.status(400).json({ message: `Partner for group program '${gp.name}' not found.` });
+          }
+          if (partner.teamId?.toString() !== finalTeamId?.toString()) {
+            return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Team.` });
+          }
+          if (partner.groupId?.toString() !== finalGroupId?.toString()) {
+            return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Group.` });
+          }
+          const otherPair = await ConversationPair.findOne({
+            programId: gp._id,
+            participants: partner._id
+          });
+          if (otherPair) {
+            return res.status(400).json({ message: `Partner ${partner.name} is already paired in another group for program '${gp.name}'.` });
+          }
         }
-        if (partner.groupId?.toString() !== finalGroupId?.toString()) {
-          return res.status(400).json({ message: `Partner for '${gp.name}' must belong to the same Group.` });
-        }
-        const otherPair = await ConversationPair.findOne({
-          programId: gp._id,
-          participants: partner._id
+
+        validatedPairsToProcess.push({
+          gp,
+          partnerIds: incomingPartnerIds,
+          isNew: true,
+          addedPartnerIds: incomingPartnerIds,
+          removedPartnerIds: [],
         });
-        if (otherPair) {
-          return res.status(400).json({ message: `Partner ${partner.name} is already paired in another group for program '${gp.name}'.` });
-        }
-        validatedPairsToProcess.push({ gp, partnerId: incomingPartnerId, isNew: true });
       }
     }
 
@@ -517,7 +593,7 @@ const updateParticipant = async (req, res) => {
     await session.withTransaction(async () => {
       // Process Group Program Pairs
       for (const item of validatedPairsToProcess) {
-        const { gp, partnerId, existingPair, isNew, partnerChanged } = item;
+        const { gp, partnerIds, existingPair, isNew, addedPartnerIds, removedPartnerIds } = item;
         const gpIdStr = gp._id.toString();
         const topicObj = validProgramTopics.find(pt => pt.programId.toString() === gpIdStr);
         const topicId = topicObj ? topicObj.topicId : null;
@@ -525,39 +601,96 @@ const updateParticipant = async (req, res) => {
         if (isNew) {
           await ConversationPair.create([{
             programId: gp._id,
-            participants: [participant._id, partnerId],
+            participants: [participant._id, ...partnerIds],
             primaryParticipantId: participant._id,
             teamId: finalTeamId,
             groupId: finalGroupId,
             topicId,
           }], { session });
 
-          await Participant.findByIdAndUpdate(
-            partnerId,
+          await Participant.updateMany(
+            { _id: { $in: partnerIds } },
             { $addToSet: { programs: gp._id } },
             { session }
           );
-        } else if (partnerChanged) {
-          existingPair.participants = [participant._id, partnerId];
+
+          if (topicId) {
+            await Participant.updateMany(
+              { _id: { $in: partnerIds } },
+              { $pull: { programTopics: { programId: gp._id } } },
+              { session }
+            );
+            await Participant.updateMany(
+              { _id: { $in: partnerIds } },
+              { $push: { programTopics: { programId: gp._id, topicId } } },
+              { session }
+            );
+          }
+        } else {
+          // Update existing pair
+          existingPair.participants = [participant._id, ...partnerIds];
+          if (!existingPair.primaryParticipantId || !existingPair.participants.some(p => p.toString() === existingPair.primaryParticipantId.toString())) {
+            existingPair.primaryParticipantId = participant._id;
+          }
           if (topicId !== undefined) existingPair.topicId = topicId;
           await existingPair.save({ session });
 
-          await Participant.findByIdAndUpdate(
-            partnerId,
-            { $addToSet: { programs: gp._id } },
-            { session }
-          );
-        } else {
-          if (topicId !== undefined && existingPair.topicId?.toString() !== topicId?.toString()) {
-            existingPair.topicId = topicId;
-            await existingPair.save({ session });
+          if (addedPartnerIds.length > 0) {
+            await Participant.updateMany(
+              { _id: { $in: addedPartnerIds } },
+              { $addToSet: { programs: gp._id } },
+              { session }
+            );
+            if (topicId) {
+              await Participant.updateMany(
+                { _id: { $in: addedPartnerIds } },
+                { $pull: { programTopics: { programId: gp._id } } },
+                { session }
+              );
+              await Participant.updateMany(
+                { _id: { $in: addedPartnerIds } },
+                { $push: { programTopics: { programId: gp._id, topicId } } },
+                { session }
+              );
+            }
+          }
+
+          if (removedPartnerIds.length > 0) {
+            for (const rId of removedPartnerIds) {
+              const otherPairCount = await ConversationPair.countDocuments({
+                programId: gp._id,
+                participants: rId,
+                _id: { $ne: existingPair._id }
+              }).session(session);
+
+              if (otherPairCount === 0) {
+                await Participant.findByIdAndUpdate(
+                  rId,
+                  {
+                    $pull: {
+                      programs: gp._id,
+                      programTopics: { programId: gp._id }
+                    }
+                  },
+                  { session }
+                );
+              }
+            }
           }
         }
       }
 
       // Process removed Group Programs
       for (const cp of removedPairs) {
-        await ConversationPair.findByIdAndDelete(cp._id).session(session);
+        if (cp.participants.length > 2) {
+          cp.participants = cp.participants.filter(p => p.toString() !== participant._id.toString());
+          if (cp.primaryParticipantId?.toString() === participant._id.toString()) {
+            cp.primaryParticipantId = cp.participants[0];
+          }
+          await cp.save({ session });
+        } else {
+          await ConversationPair.findByIdAndDelete(cp._id).session(session);
+        }
       }
 
       // Group Program Topic Synchronization for any remaining topic changes
@@ -632,10 +765,107 @@ const deleteParticipant = async (req, res) => {
     const { id } = req.params;
 
     await session.withTransaction(async () => {
-      const participant = await Participant.findByIdAndDelete(id, { session });
+      const participant = await Participant.findById(id).session(session);
 
       if (!participant) {
         throw new Error("PARTICIPANT_NOT_FOUND");
+      }
+
+      // Collect all affected program IDs before deletion
+      const affectedProgramIds = new Set();
+      if (participant.programs && Array.isArray(participant.programs)) {
+        participant.programs.forEach((pId) => affectedProgramIds.add(pId.toString()));
+      }
+      if (participant.programTopics && Array.isArray(participant.programTopics)) {
+        participant.programTopics.forEach((pt) => {
+          if (pt.programId) affectedProgramIds.add(pt.programId.toString());
+        });
+      }
+
+      const judgeMarks = await JudgeMark.find({ participantId: id }).session(session);
+      const markIds = judgeMarks.map((m) => m._id);
+      judgeMarks.forEach((m) => affectedProgramIds.add(m.programId.toString()));
+
+      const conversationPairs = await ConversationPair.find({ participants: id }).session(session);
+      conversationPairs.forEach((cp) => affectedProgramIds.add(cp.programId.toString()));
+
+      const progResults = await ProgramResult.find({
+        $or: [{ participantId: id }, { participantIds: id }],
+      }).session(session);
+      progResults.forEach((pr) => affectedProgramIds.add(pr.programId.toString()));
+
+      // Delete MarkAuditLogs (referencing either participantId or the deleted JudgeMark IDs)
+      await MarkAuditLog.deleteMany(
+        { $or: [{ participantId: id }, { markId: { $in: markIds } }] },
+        { session }
+      );
+
+      // Delete JudgeMarks for this participant
+      await JudgeMark.deleteMany({ participantId: id }, { session });
+
+      // Handle ConversationPairs and their associated ProgramResults
+      for (const pair of conversationPairs) {
+        const remainingParticipants = pair.participants.filter(
+          (pId) => pId.toString() !== id.toString()
+        );
+
+        if (remainingParticipants.length < 2) {
+          // Member count < 2: Delete pair and delete associated ProgramResult
+          await ConversationPair.findByIdAndDelete(pair._id, { session });
+          await ProgramResult.deleteMany(
+            {
+              programId: pair.programId,
+              $or: [{ participantId: id }, { participantIds: id }],
+            },
+            { session }
+          );
+        } else {
+          // Member count >= 2: Keep pair, update members and primary participant
+          let newPrimaryId = pair.primaryParticipantId;
+          if (
+            pair.primaryParticipantId &&
+            pair.primaryParticipantId.toString() === id.toString()
+          ) {
+            newPrimaryId = remainingParticipants[0];
+          }
+
+          pair.participants = remainingParticipants;
+          pair.primaryParticipantId = newPrimaryId;
+          await pair.save({ session });
+
+          // Update corresponding ProgramResult (keep result for surviving group)
+          const pairResults = await ProgramResult.find({
+            programId: pair.programId,
+            $or: [{ participantId: id }, { participantIds: id }],
+          }).session(session);
+
+          for (const resDoc of pairResults) {
+            resDoc.participantIds = resDoc.participantIds.filter(
+              (pId) => pId.toString() !== id.toString()
+            );
+            if (
+              resDoc.participantId &&
+              resDoc.participantId.toString() === id.toString()
+            ) {
+              resDoc.participantId = newPrimaryId;
+            }
+            await resDoc.save({ session });
+          }
+        }
+      }
+
+      // Delete individual (non-conversation) ProgramResults for this participant
+      await ProgramResult.deleteMany(
+        { participantId: id, isConversation: { $ne: true } },
+        { session }
+      );
+
+      // Delete the participant document
+      await Participant.findByIdAndDelete(id, { session });
+
+      // Recalculate scores for all affected programs within the transaction
+      for (const programIdStr of affectedProgramIds) {
+        await recalculateProgramScoresInternal(programIdStr, session, { force: true });
       }
     });
 

@@ -9,16 +9,17 @@ const Program = require("../models/Program");
 const createPair = async (req, res) => {
   try {
     const { participantIds, programId, primaryParticipantId, topicId } = req.body;
+    const effectivePrimaryId = primaryParticipantId || (participantIds && participantIds[0]);
 
     // ── 1. Presence check ─────────────────────────────────────────────────────
-    if (!participantIds || !Array.isArray(participantIds) || participantIds.length < 2 || !programId || !primaryParticipantId) {
+    if (!participantIds || !Array.isArray(participantIds) || participantIds.length < 2 || !programId || !effectivePrimaryId) {
       return res.status(400).json({
-        message: "participantIds (array of at least 2), programId, and primaryParticipantId are all required",
+        message: "participantIds (array of at least 2) and programId are required",
       });
     }
 
-    // primaryParticipantId must be one of the participants
-    if (!participantIds.includes(primaryParticipantId)) {
+    // effectivePrimaryId must be one of the participants
+    if (!participantIds.includes(effectivePrimaryId)) {
       return res.status(400).json({
         message: "primaryParticipantId must be one of the participantIds",
       });
@@ -69,55 +70,96 @@ const createPair = async (req, res) => {
       }
     }
 
-    // ── 5. Duplicate pair check ───────────────────────────────────────────────
-    const existingPair = await ConversationPair.findOne({
+    // ── 5. Duplicate pair check / Update target pair check ────────────────────
+    const existingPairs = await ConversationPair.find({
       programId,
       participants: { $in: participantIds },
     });
-    if (existingPair) {
-      return res.status(400).json({
-        message: "One or more participants are already registered in a group/pair for this program",
-      });
+
+    let targetPair = existingPairs.find(cp => cp.participants.some(p => p.toString() === effectivePrimaryId.toString()));
+    if (!targetPair && existingPairs.length > 0) {
+      targetPair = existingPairs[0];
+    }
+    
+    // Check if any participant is in a DIFFERENT pair
+    for (const cp of existingPairs) {
+      if (!targetPair || cp._id.toString() !== targetPair._id.toString()) {
+        return res.status(400).json({
+          message: "One or more participants are already registered in another group/pair for this program",
+        });
+      }
     }
 
-    // ── 6. Create the pair record and synchronize participants ─────────────────
+    // ── 6. Create or update the pair record and synchronize participants ──────
     const session = await mongoose.startSession();
     let populated;
 
     try {
       await session.withTransaction(async () => {
-        const pairs = await ConversationPair.create([{
-          programId,
-          participants: participantIds,
-          primaryParticipantId,
-          teamId: firstP.teamId,
-          groupId: firstP.groupId,
-          topicId: topicId || null,
-        }], { session });
+        let pair;
+        let oldParticipantIds = [];
 
-        const pair = pairs[0];
+        if (targetPair) {
+          pair = targetPair;
+          oldParticipantIds = pair.participants.map(p => p.toString());
+          pair.participants = participantIds;
+          pair.primaryParticipantId = effectivePrimaryId;
+          pair.topicId = topicId || null;
+          await pair.save({ session });
+        } else {
+          const pairs = await ConversationPair.create([{
+            programId,
+            participants: participantIds,
+            primaryParticipantId: effectivePrimaryId,
+            teamId: firstP.teamId,
+            groupId: firstP.groupId,
+            topicId: topicId || null,
+          }], { session });
 
-        // ── 7. Add program to all participants' programs[] without duplicates ─────
+          pair = pairs[0];
+        }
+
+        // ── 7. Synchronize program & topic to participant records ────────────────
         await Participant.updateMany(
           { _id: { $in: participantIds } },
           { $addToSet: { programs: programId } },
           { session }
         );
 
-        // Also add the topic mapping to participants' programTopics for consistency
         if (topicId) {
-          // First remove any existing mapping for this program to avoid duplicates
           await Participant.updateMany(
             { _id: { $in: participantIds } },
             { $pull: { programTopics: { programId } } },
             { session }
           );
-          // Then push the new one
           await Participant.updateMany(
             { _id: { $in: participantIds } },
             { $push: { programTopics: { programId, topicId } } },
             { session }
           );
+        }
+
+        // Clean up removed participants if updating an existing pair
+        const removedIds = oldParticipantIds.filter(id => !participantIds.includes(id));
+        for (const rId of removedIds) {
+          const otherPairCount = await ConversationPair.countDocuments({
+            programId,
+            participants: rId,
+            _id: { $ne: pair._id }
+          }).session(session);
+
+          if (otherPairCount === 0) {
+            await Participant.findByIdAndUpdate(
+              rId,
+              {
+                $pull: {
+                  programs: programId,
+                  programTopics: { programId }
+                }
+              },
+              { session }
+            );
+          }
         }
 
         // ── 8. Return populated pair ──────────────────────────────────────────────
