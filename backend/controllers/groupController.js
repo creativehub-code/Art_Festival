@@ -3,6 +3,15 @@ const Group = require("../models/Group");
 const Participant = require("../models/Participant");
 const sendError = require("../utils/errorResponse");
 
+const getGroupCount = async (req, res) => {
+  try {
+    const count = await Group.countDocuments();
+    res.json({ total: count });
+  } catch (error) {
+    sendError(res, 500, "Failed to retrieve group count", error);
+  }
+};
+
 const getGroups = async (req, res) => {
   try {
     const groups = await Group.find().lean();
@@ -100,4 +109,4 @@ const getGroupParticipants = async (req, res) => {
   }
 };
 
-module.exports = { getGroups, createGroup, deleteGroup, getGroupParticipants };
+module.exports = { getGroups, getGroupCount, createGroup, deleteGroup, getGroupParticipants };

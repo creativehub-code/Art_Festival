@@ -95,6 +95,17 @@ export const useGroups = () => {
   });
 };
 
+export const useGroupCount = () => {
+  return useQuery<{ total: number }>({
+    queryKey: ['groupCount'],
+    queryFn: async () => {
+      const data = await apiRequest('/groups/count');
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const useLanguages = () => {
   return useQuery<Language[]>({
     queryKey: ['languages'],
@@ -324,7 +335,10 @@ export const useInvalidate = () => {
   return {
     invalidatePrograms: () => queryClient.invalidateQueries({ queryKey: ['programs'] }),
     invalidateLanguages: () => queryClient.invalidateQueries({ queryKey: ['languages'] }),
-    invalidateGroups: () => queryClient.invalidateQueries({ queryKey: ['groups'] }),
+    invalidateGroups: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      queryClient.invalidateQueries({ queryKey: ['groupCount'] });
+    },
     invalidateTeams: () => queryClient.invalidateQueries({ queryKey: ['teams'] }),
     invalidateParticipants: () => {
       queryClient.invalidateQueries({ queryKey: ['participants'] });

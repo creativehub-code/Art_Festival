@@ -16,7 +16,7 @@ import {
   ArcElement
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { usePrograms, useTeams, useGroups, useParticipants, useLanguages, useInvalidate } from '@/lib/queries';
+import { usePrograms, useTeams, useGroupCount, useParticipants, useInvalidate, useLanguages } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import { useToast } from '@/lib/useToast';
 
@@ -35,7 +35,8 @@ ChartJS.register(
 export default function AdminDashboard() {
   const { data: programs = [] } = usePrograms();
   const { data: teams = [] } = useTeams();
-  const { data: groups = [] } = useGroups();
+  const { data: groupCountRes } = useGroupCount();
+  const groupCount = groupCountRes?.total ?? 0;
   const { data: participantsRes } = useParticipants();
   const { invalidatePrograms } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
@@ -290,7 +291,7 @@ export default function AdminDashboard() {
                 <div className="relative z-10 flex items-end justify-between mt-3 sm:mt-4 min-w-0">
                   <p className="text-pink-300/70 text-[10px] sm:text-xs font-semibold uppercase tracking-wider mb-0.5 sm:mb-1 truncate">Active Groups</p>
                   <h3 className="text-white font-black text-2xl sm:text-4xl md:text-5xl leading-none shrink-0 ml-1">
-                    {groups.length}
+                    {groupCount}
                   </h3>
                 </div>
              </div>
