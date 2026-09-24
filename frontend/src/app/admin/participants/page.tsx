@@ -109,34 +109,36 @@ const CustomSelect = ({ value, onChange, options, placeholder, icon: Icon, disab
             </div>
 
             {isOpen && (
-                <div className="absolute z-50 w-full mt-2 bg-[#1A1825] border border-purple-500/30 rounded-xl shadow-2xl shadow-purple-900/30 max-h-64 overflow-y-auto custom-scrollbar animate-in slide-in-from-top-2 fade-in duration-200 flex flex-col py-2">
-                    <div 
-                        onClick={() => { onChange(''); setIsOpen(false); }}
-                        className="px-4 py-3 text-gray-500 hover:bg-white/5 cursor-pointer italic text-sm border-b border-white/5 transition-colors"
-                    >
-                        {placeholder}
-                    </div>
-                    {options.length === 0 ? (
-                        <div className="px-4 py-8 text-gray-500 italic text-sm text-center flex flex-col items-center gap-2">
-                            <Grid size={24} className="opacity-20" />
-                            No options available
+                <div className="absolute z-50 w-full mt-2 bg-[#1A1825] border border-purple-500/30 rounded-xl shadow-2xl shadow-purple-900/30 overflow-hidden animate-in slide-in-from-top-2 fade-in duration-200">
+                    <div className="max-h-[160px] overflow-y-auto no-scrollbar flex flex-col py-2">
+                        <div
+                            onClick={() => { onChange(''); setIsOpen(false); }}
+                            className="px-4 py-3 text-gray-500 hover:bg-white/5 cursor-pointer italic text-sm border-b border-white/5 transition-colors shrink-0"
+                        >
+                            {placeholder}
                         </div>
-                    ) : (
-                        options.map((opt: any) => (
-                            <div 
-                                key={opt.value}
-                                onClick={() => { onChange(opt.value); setIsOpen(false); }}
-                                className={`px-4 py-3 cursor-pointer transition-all text-sm flex items-center gap-2 ${
-                                    String(value) === String(opt.value) 
-                                        ? 'bg-purple-500/10 text-purple-300 font-bold border-l-[3px] border-purple-500' 
-                                        : 'text-gray-300 border-l-[3px] border-transparent hover:bg-white/5 hover:text-white hover:border-gray-500'
-                                }`}
-                            >
-                                <span title={opt.label} className="truncate flex-1 min-w-0">{opt.label}</span>
-                                {String(value) === String(opt.value) && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />}
+                        {options.length === 0 ? (
+                            <div className="px-4 py-8 text-gray-500 italic text-sm text-center flex flex-col items-center gap-2 shrink-0">
+                                <Grid size={24} className="opacity-20" />
+                                No options available
                             </div>
-                        ))
-                    )}
+                        ) : (
+                            options.map((opt: any) => (
+                                <div
+                                    key={opt.value}
+                                    onClick={() => { onChange(opt.value); setIsOpen(false); }}
+                                    className={`px-4 py-3 cursor-pointer transition-all text-sm flex items-center gap-2 shrink-0 ${
+                                        String(value) === String(opt.value)
+                                            ? 'bg-purple-500/10 text-purple-300 font-bold border-l-[3px] border-purple-500'
+                                            : 'text-gray-300 border-l-[3px] border-transparent hover:bg-white/5 hover:text-white hover:border-gray-500'
+                                    }`}
+                                >
+                                    <span title={opt.label} className="truncate flex-1 min-w-0">{opt.label}</span>
+                                    {String(value) === String(opt.value) && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />}
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -1314,7 +1316,7 @@ export default function ParticipantsPage() {
                                 });
                                 setIsEditModalOpen(true);
                             }}
-                            className="absolute top-6 right-16 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 border border-white/10 backdrop-blur-md"
+                            className="absolute top-6 right-16 text-white/50 hover:text-white transition-colors text-sm"
                         >
                             Edit
                         </button>
@@ -1688,7 +1690,7 @@ export default function ParticipantsPage() {
                                                                 setProgramToRemove(prog._id || prog);
                                                             }}
                                                             disabled={isRemovingProgram}
-                                                            className="text-xs bg-red-900/30 text-red-400 hover:text-red-300 px-3 py-1.5 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors disabled:opacity-50"
+                                                            className="text-xs text-red-500 hover:text-red-400 transition-colors disabled:opacity-50"
                                                         >
                                                             {isRemovingProgram && programToRemove === (prog._id || prog) ? 'Removing...' : 'Remove'}
                                                         </button>
