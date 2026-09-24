@@ -779,11 +779,11 @@ const calculateScores = async (req, res) => {
         .session(session);
 
       responseData = {
-        message: "Scores calculated and updated successfully.",
-        resultsAwarded: calcRes.resultsAwarded,
+        message: "Scores & rankings recalculated successfully",
         participantsUpdated: calcRes.participantsUpdated,
         teamsUpdated: calcRes.teamsUpdated,
-        results: populatedResults,
+        resultsAwarded: calcRes.resultsAwarded,
+        positionResults: populatedResults,
       };
     });
 
