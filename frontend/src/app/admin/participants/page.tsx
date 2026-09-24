@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { Trash2, Plus, X, User, Users, Flag, Save, Layers, Grid, FileText, Globe, Image, Upload, Search, ChevronDown, List, MoreVertical, Calendar, AlertTriangle } from 'lucide-react';
+import { Trash2, Plus, X, User, Users, Flag, Save, Layers, Grid, FileText, Globe, Image, Upload, Search, ChevronDown, List, MoreVertical, Calendar, AlertTriangle, Edit } from 'lucide-react';
 import { useGroups, useTeams, usePrograms, useParticipants, usePaginatedParticipants, useInvalidate } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -212,6 +212,11 @@ export default function ParticipantsPage() {
   const [hoveredParticipant, setHoveredParticipant] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [viewParticipant, setViewParticipant] = useState<any>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', chestNumber: '', teamId: '', groupId: '', image: '' });
+  const [programToRemove, setProgramToRemove] = useState<string | null>(null);
+  const [isRemovingProgram, setIsRemovingProgram] = useState(false);
   const [expandedProgramId, setExpandedProgramId] = useState<string | null>(null);
   const [showAddProgramModal, setShowAddProgramModal] = useState(false);
   const [selectedParticipantForProgram, setSelectedParticipantForProgram] = useState<any>(null);
@@ -1297,6 +1302,23 @@ export default function ParticipantsPage() {
                     >
                         <X size={24} />
                     </button>
+                    {!isAddingProgramMode && (
+                        <button
+                            onClick={() => {
+                                setEditForm({
+                                    name: viewParticipant.name || '',
+                                    chestNumber: viewParticipant.chestNumber || '',
+                                    teamId: viewParticipant.teamId?._id || viewParticipant.teamId || '',
+                                    groupId: viewParticipant.groupId?._id || viewParticipant.groupId || '',
+                                    image: ''
+                                });
+                                setIsEditModalOpen(true);
+                            }}
+                            className="absolute top-6 right-16 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 border border-white/10 backdrop-blur-md"
+                        >
+                            Edit
+                        </button>
+                    )}
                     
                     <div className={`flex flex-col md:flex-row gap-6 items-center md:items-start text-center md:text-left transition-all duration-300 ${isAddingProgramMode ? 'gap-4' : 'gap-6'}`}>
                         {/* Avatar */}
@@ -1659,6 +1681,18 @@ export default function ParticipantsPage() {
                                                         <span className="text-gray-200 text-sm font-medium">{prog.name}</span>
                                                     </div>
                                                     {!isExpanded && <span className="text-[10px] text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">Tap to view details</span>}
+                                                    {isExpanded && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setProgramToRemove(prog._id || prog);
+                                                            }}
+                                                            disabled={isRemovingProgram}
+                                                            className="text-xs bg-red-900/30 text-red-400 hover:text-red-300 px-3 py-1.5 rounded border border-red-900/50 hover:bg-red-900/50 transition-colors disabled:opacity-50"
+                                                        >
+                                                            {isRemovingProgram && programToRemove === (prog._id || prog) ? 'Removing...' : 'Remove'}
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 
                                                 {isExpanded && (
@@ -1719,6 +1753,193 @@ export default function ParticipantsPage() {
             </div>
         </div>
       )}
+      {isEditModalOpen && viewParticipant && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 backdrop-blur-md" onClick={() => !isSavingEdit && setIsEditModalOpen(false)}>
+            <div
+                className="bg-[#1E1B2E] p-8 rounded-[40px] border border-[#2D283E] w-full max-w-lg shadow-2xl overflow-visible relative"
+                onClick={e => e.stopPropagation()}
+            >
+                <button
+                    onClick={() => !isSavingEdit && setIsEditModalOpen(false)}
+                    className="absolute top-6 right-6 text-white/50 hover:text-white transition-colors disabled:opacity-50"
+                    disabled={isSavingEdit}
+                >
+                    <X size={24} />
+                </button>
+                <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                    Edit Participant
+                </h3>
+
+                <div className="space-y-6">
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="w-24 h-24 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center overflow-hidden bg-[#0F0D15] relative group">
+                            {editForm.image || viewParticipant.image ? (
+                                <img src={editForm.image || `${API_BASE_URL}/participants/${viewParticipant._id}/photo`} alt="Profile" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                            ) : (
+                                <User className="text-gray-600" size={32} />
+                            )}
+                            <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                <Upload className="text-white" size={20} />
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={isSavingEdit}
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            if (file.size > 500 * 1024) {
+                                                addToast({ title: 'File too large', message: 'Image must be less than 500KB', type: 'error' });
+                                                return;
+                                            }
+                                            const reader = new FileReader();
+                                            reader.onloadend = () => setEditForm(prev => ({ ...prev, image: reader.result as string }));
+                                            reader.readAsDataURL(file);
+                                        }
+                                    }}
+                                    className="hidden"
+                                />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-300 ml-1">Name</label>
+                            <input
+                                value={editForm.name}
+                                onChange={e => setEditForm({...editForm, name: e.target.value})}
+                                disabled={isSavingEdit}
+                                className="w-full p-4 rounded-xl bg-[#13111C] border border-gray-700/50 text-white focus:outline-none focus:border-purple-500 transition-all"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-gray-300 ml-1">Chest Number</label>
+                            <input
+                                value={editForm.chestNumber}
+                                onChange={e => setEditForm({...editForm, chestNumber: e.target.value})}
+                                disabled={isSavingEdit}
+                                className="w-full p-4 rounded-xl bg-[#13111C] border border-gray-700/50 text-white focus:outline-none focus:border-purple-500 transition-all"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-300 ml-1">Team</label>
+                                <CustomSelect
+                                    value={editForm.teamId}
+                                    onChange={(val: string) => setEditForm({...editForm, teamId: val})}
+                                    options={teams.map((t: any) => ({ value: t._id, label: t.name }))}
+                                    placeholder="Select Team"
+                                    icon={Flag}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-300 ml-1">Group</label>
+                                <CustomSelect
+                                    value={editForm.groupId}
+                                    onChange={(val: string) => setEditForm({...editForm, groupId: val})}
+                                    options={groups.map((g: any) => ({ value: g._id, label: g.name }))}
+                                    placeholder="Select Group"
+                                    icon={Layers}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mt-8 flex gap-4">
+                    <button
+                        onClick={() => setIsEditModalOpen(false)}
+                        disabled={isSavingEdit}
+                        className="flex-1 py-4 rounded-xl font-bold text-white bg-[#2D283E] hover:bg-[#3D385E] transition-colors disabled:opacity-50"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={async () => {
+                            if (!editForm.name || !editForm.chestNumber) {
+                                addToast({ title: 'Validation Error', message: 'Name and Chest Number are required.', type: 'error' });
+                                return;
+                            }
+                            setIsSavingEdit(true);
+                            try {
+                                const payload: any = {
+                                    name: editForm.name,
+                                    chestNumber: editForm.chestNumber,
+                                    teamId: editForm.teamId || undefined,
+                                    groupId: editForm.groupId || undefined,
+                                };
+                                if (editForm.image) {
+                                    payload.image = editForm.image;
+                                }
+                                await apiRequest(`/participants/${viewParticipant._id}`, 'PUT', payload);
+
+                                const updated = await apiRequest(`/participants/${viewParticipant._id}`);
+                                setViewParticipant((curr: any) => ({ ...updated, image: curr.image }));
+
+                                invalidateParticipants();
+                                if (updated.teamId?._id || updated.teamId) invalidateTeamParticipants(updated.teamId?._id || updated.teamId);
+                                if (updated.groupId?._id || updated.groupId) invalidateGroupParticipants(updated.groupId?._id || updated.groupId);
+
+                                addToast({ title: 'Success', message: 'Participant updated successfully', type: 'success' });
+                                setIsEditModalOpen(false);
+                            } catch (e: any) {
+                                addToast({ title: 'Error', message: e.message || 'Failed to update participant', type: 'error' });
+                            } finally {
+                                setIsSavingEdit(false);
+                            }
+                        }}
+                        disabled={isSavingEdit}
+                        className="flex-1 py-4 rounded-xl font-bold text-white bg-purple-600 hover:bg-purple-500 transition-colors shadow-lg shadow-purple-900/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                        {isSavingEdit ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...
+                            </>
+                        ) : (
+                            'Save Changes'
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+      <ConfirmModal
+        isOpen={!!programToRemove}
+        title="Remove Program"
+        message="Remove this participant from this program?"
+        confirmText={isRemovingProgram ? "Removing..." : "Remove"}
+        onConfirm={async () => {
+            if (!programToRemove || !viewParticipant) return;
+            setIsRemovingProgram(true);
+            try {
+                const progId = programToRemove;
+                const updatedPrograms = viewParticipant.programs
+                    .map((p: any) => p._id || p)
+                    .filter((id: string) => id !== progId);
+                const updatedTopics = (viewParticipant.programTopics || [])
+                    .filter((pt: any) => pt.programId !== progId);
+
+                await apiRequest(`/participants/${viewParticipant._id}`, 'PUT', {
+                    programs: updatedPrograms,
+                    programTopics: updatedTopics
+                });
+
+                const updated = await apiRequest(`/participants/${viewParticipant._id}`);
+                setViewParticipant((curr: any) => ({ ...updated, image: curr.image }));
+
+                invalidateParticipants();
+                invalidateProgramParticipants(progId);
+
+                addToast({ title: 'Success', message: 'Program removed successfully', type: 'success' });
+            } catch (e: any) {
+                addToast({ title: 'Error', message: e.message || 'Failed to remove program', type: 'error' });
+            } finally {
+                setIsRemovingProgram(false);
+                setProgramToRemove(null);
+            }
+        }}
+        onCancel={() => !isRemovingProgram && setProgramToRemove(null)}
+      />
       <ConfirmModal
         isOpen={!!deleteConfirmId}
         title="Delete Participant"
