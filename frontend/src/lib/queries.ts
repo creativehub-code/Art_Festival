@@ -142,11 +142,19 @@ export const useParticipants = () => {
   });
 };
 
-export const usePaginatedParticipants = (page: number = 1, limit: number = 50) => {
+export const usePaginatedParticipants = (page: number = 1, limit: number = 50, groupId?: string, teamId?: string, search?: string) => {
   return useQuery({
-    queryKey: ['paginatedParticipants', page, limit],
+    queryKey: ['paginatedParticipants', page, limit, groupId, teamId, search],
     queryFn: async () => {
-      const data = await apiRequest(`/participants?page=${page}&limit=${limit}`);
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+      });
+      if (groupId) params.append('groupId', groupId);
+      if (teamId) params.append('teamId', teamId);
+      if (search) params.append('search', search);
+
+      const data = await apiRequest(`/participants?${params.toString()}`);
       return data;
     },
     staleTime: 1 * 60 * 1000,

@@ -99,8 +99,21 @@ const getParticipants = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const skip = (page - 1) * limit;
 
+    const { groupId, teamId, search } = req.query;
+
+    let query = {};
+    if (groupId) query.groupId = groupId;
+    if (teamId) query.teamId = teamId;
+    if (search) {
+      const safeSearch = escapeRegex(search.trim());
+      query.$or = [
+        { name: { $regex: safeSearch, $options: "i" } },
+        { chestNumber: { $regex: safeSearch, $options: "i" } },
+      ];
+    }
+
     const [participants, total] = await Promise.all([
-      Participant.find()
+      Participant.find(query)
         .select("-image")
         .populate("teamId", "name")
         .populate("groupId", "name")
@@ -108,7 +121,7 @@ const getParticipants = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
-      Participant.countDocuments()
+      Participant.countDocuments(query)
     ]);
     res.json({ data: participants, total, page, pages: Math.ceil(total / limit) });
   } catch (error) {

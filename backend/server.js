@@ -6,6 +6,7 @@ const mongoSanitize = require("express-mongo-sanitize");
 const dotenv = require("dotenv");
 const mongoose = require("mongoose");
 const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
 const { setCsrfToken, validateCsrf } = require("./middleware/csrfMiddleware");
 
 const connectDB = require("./config/db");
@@ -32,21 +33,56 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const authLimiter = rateLimit({
+const authLimiterIP = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per 15 minutes
+  max: 50, // Limit each IP to 50 attempts total per 15 minutes
   message: "Too many login/setup attempts from this IP, please try again after 15 minutes",
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { ip: false },
+  keyGenerator: (req) => req.ip
+});
+
+const authLimiterAccount = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per specific account per 15 minutes
+  message: "Too many login attempts for this account, please try again after 15 minutes",
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { ip: false },
+  keyGenerator: (req) => {
+    const identifier = req.body.email ? String(req.body.email).trim().toLowerCase() : "";
+    return `${req.ip}-${identifier}`;
+  }
 });
 
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 20, // Limit each IP to 20 write operations per minute
-  message: "Too many write operations from this IP, please try again after a minute",
+  max: 120, // Limit to 120 write operations per minute per user/IP
+  message: "Too many write operations, please try again after a minute",
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === "GET", // Apply only to POST, PUT, DELETE
+  validate: { ip: false },
+  skip: (req) => req.method === "GET", // Apply only to POST, PUT, PATCH, DELETE
+  keyGenerator: (req) => {
+    try {
+      let token;
+      if (req.cookies && req.cookies.token) {
+        token = req.cookies.token;
+      } else if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+        token = req.headers.authorization.split(" ")[1];
+      }
+      if (token) {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded && decoded.id) {
+          return decoded.id; // User-specific bucket
+        }
+      }
+    } catch (e) {
+      // Ignore token errors and fallback to IP
+    }
+    return req.ip;
+  }
 });
 
 // Middleware
@@ -109,8 +145,8 @@ app.use((req, res, next) => {
 app.use("/api", apiLimiter);
 
 // Specific Route Rate Limiting
-app.use("/api/auth/login", authLimiter);
-app.use("/api/auth/setup", authLimiter);
+app.use("/api/auth/login", authLimiterIP, authLimiterAccount);
+app.use("/api/auth/setup", authLimiterIP, authLimiterAccount);
 app.use("/api/participants", writeLimiter);
 app.use("/api/programs", writeLimiter);
 app.use("/api/languages", writeLimiter);

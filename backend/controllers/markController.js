@@ -14,6 +14,40 @@ const sendError = require("../utils/errorResponse");
 const sseManager = require("../utils/sseManager");
 const Judge = require("../models/Judge");
 
+// Utility: Custom bounded transaction retry for transient WriteConflicts
+const MAX_TRANSACTION_RETRIES = 3;
+
+const withRetryTransaction = async (operationName, callback) => {
+  let attempt = 1;
+  while (attempt <= MAX_TRANSACTION_RETRIES) {
+    const session = await mongoose.startSession();
+    try {
+      session.startTransaction();
+      
+      const result = await callback(session);
+      
+      await session.commitTransaction();
+      return result;
+    } catch (error) {
+      await session.abortTransaction();
+      
+      // Retry on MongoDB TransientTransactionError or explicitly WriteConflict (code 112)
+      const isTransient = error.hasErrorLabel && error.hasErrorLabel('TransientTransactionError');
+      const isWriteConflict = error.code === 112;
+
+      if ((isTransient || isWriteConflict) && attempt < MAX_TRANSACTION_RETRIES) {
+        console.warn(`[${operationName}] WriteConflict detected. Retrying transaction (attempt ${attempt + 1}/${MAX_TRANSACTION_RETRIES})`);
+        attempt++;
+        continue;
+      }
+      
+      throw error;
+    } finally {
+      await session.endSession();
+    }
+  }
+};
+
 
 // @desc    Submit or Updates marks (Judge)
 // @route   POST /api/marks
@@ -179,13 +213,27 @@ const submitMark = async (req, res) => {
         mirrorUpdate.criteriaMarks = formattedCriteriaMarks;
       }
 
-      const mirroringPromises = otherMemberIds.map(memberId => 
-        JudgeMark.findOneAndUpdate(
-          { judgeId, programId, participantId: memberId },
+      const mirroringPromises = otherMemberIds.map(async (memberId) => {
+        // Safely update partner mark only if it is not already 'approved'
+        const updated = await JudgeMark.findOneAndUpdate(
+          { judgeId, programId, participantId: memberId, status: { $ne: "approved" } },
           mirrorUpdate,
-          { upsert: true, new: true }
-        )
-      );
+          { new: true }
+        );
+        
+        // If no document was updated, it either doesn't exist, or it is protected (approved).
+        if (!updated) {
+          const existing = await JudgeMark.findOne({ judgeId, programId, participantId: memberId });
+          if (!existing) {
+            // It really doesn't exist, safely create it.
+            try {
+              await JudgeMark.create({ judgeId, programId, participantId: memberId, ...mirrorUpdate });
+            } catch (err) {
+              if (err.code !== 11000) throw err; // Ignore if created by a concurrent request
+            }
+          }
+        }
+      });
       
       await Promise.all(mirroringPromises);
     }
@@ -308,11 +356,30 @@ const submitBatchMarks = async (req, res) => {
     }
 
     let savedCount = 0;
+    let skippedCount = 0;
 
     await session.withTransaction(async () => {
+      // 1. Fetch existing marks to safely identify approved ones
+      const existingMarks = await JudgeMark.find({
+        judgeId,
+        programId
+      }).session(session);
+
+      const approvedParticipantIds = new Set(
+        existingMarks
+          .filter(m => m.status === "approved")
+          .map(m => m.participantId.toString())
+      );
+
       const bulkOps = [];
       
       for (const [pId, markData] of marksByParticipant.entries()) {
+        // Protect approved marks from being overwritten
+        if (approvedParticipantIds.has(pId)) {
+          skippedCount++;
+          continue;
+        }
+
         const setObj = {
           marksGiven: markData.marksGiven,
           submitted: true,
@@ -354,13 +421,21 @@ const submitBatchMarks = async (req, res) => {
               mirrorSet.criteriaMarks = markData.criteriaMarks;
             }
 
-            const mirrorOps = otherMemberIds.map(memberId => ({
-              updateOne: {
-                filter: { judgeId, programId, participantId: memberId },
-                update: { $set: mirrorSet },
-                upsert: true,
-              },
-            }));
+            const mirrorOps = [];
+            for (const memberId of otherMemberIds) {
+              // Protect mirrored marks if they are already approved
+              if (approvedParticipantIds.has(memberId.toString())) {
+                continue;
+              }
+
+              mirrorOps.push({
+                updateOne: {
+                  filter: { judgeId, programId, participantId: memberId },
+                  update: { $set: mirrorSet },
+                  upsert: true,
+                },
+              });
+            }
 
             if (mirrorOps.length > 0) {
               await JudgeMark.bulkWrite(mirrorOps, { session });
@@ -390,7 +465,8 @@ const submitBatchMarks = async (req, res) => {
     res.json({
       success: true,
       savedCount,
-      message: `Successfully submitted marks for ${savedCount} participant(s).`,
+      skippedCount,
+      message: `Successfully submitted marks for ${savedCount} participant(s).` + (skippedCount > 0 ? ` Skipped ${skippedCount} already approved mark(s).` : ''),
     });
   } catch (error) {
     sendError(res, 400, "Error submitting batch marks", error);
@@ -466,16 +542,9 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
 
   // Fallback wrapper: if caller did not provide a session, wrap in a transaction session
   if (!session) {
-    const createdSession = await mongoose.startSession();
-    try {
-      let result;
-      await createdSession.withTransaction(async () => {
-        result = await recalculateProgramScoresInternal(programId, createdSession, options);
-      });
-      return result;
-    } finally {
-      await createdSession.endSession();
-    }
+    return await withRetryTransaction("recalculateProgramScoresInternal", async (createdSession) => {
+      return await recalculateProgramScoresInternal(programId, createdSession, options);
+    });
   }
 
   const programQuery = Program.findById(programId);
@@ -693,12 +762,11 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
 // @route   POST /api/marks/calculate/:programId
 const calculateScores = async (req, res) => {
   const { programId } = req.params;
-  const session = await mongoose.startSession();
 
   try {
     let responseData = null;
 
-    await session.withTransaction(async () => {
+    await withRetryTransaction("calculateScores", async (session) => {
       const calcRes = await recalculateProgramScoresInternal(programId, session, { force: true });
 
       // Update program status to completed
@@ -711,11 +779,11 @@ const calculateScores = async (req, res) => {
         .session(session);
 
       responseData = {
-        message: "Scores & rankings recalculated successfully",
+        message: "Scores calculated and updated successfully.",
+        resultsAwarded: calcRes.resultsAwarded,
         participantsUpdated: calcRes.participantsUpdated,
         teamsUpdated: calcRes.teamsUpdated,
-        resultsAwarded: calcRes.resultsAwarded,
-        positionResults: populatedResults,
+        results: populatedResults,
       };
     });
 
@@ -982,7 +1050,6 @@ const getAllExportData = async (req, res) => {
 // @route   PATCH /api/marks/:id/status
 // @access  Admin
 const updateMarkStatus = async (req, res) => {
-  const session = await mongoose.startSession();
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -993,7 +1060,7 @@ const updateMarkStatus = async (req, res) => {
 
     let updatedMark = null;
 
-    await session.withTransaction(async () => {
+    await withRetryTransaction("updateMarkStatus", async (session) => {
       const mark = await JudgeMark.findById(id).session(session);
       if (!mark) {
         throw new Error("MARK_NOT_FOUND");
@@ -1043,8 +1110,6 @@ const updateMarkStatus = async (req, res) => {
       return res.status(404).json({ message: "Mark not found." });
     }
     sendError(res, 500, "Error updating mark status", error);
-  } finally {
-    await session.endSession();
   }
 };
 
@@ -1052,10 +1117,9 @@ const updateMarkStatus = async (req, res) => {
 // @route   PATCH /api/marks/:id
 // @access  Admin
 const editApprovedMark = async (req, res) => {
-  const session = await mongoose.startSession();
   try {
     let updatedMark;
-    await session.withTransaction(async () => {
+    await withRetryTransaction("editApprovedMark", async (session) => {
       const { id } = req.params;
       const { newMark, criteriaMarks, reason } = req.body;
       const adminId = req.user.id;
@@ -1166,8 +1230,6 @@ const editApprovedMark = async (req, res) => {
        return res.status(400).json({ message: error.message });
     }
     sendError(res, 500, "Error editing mark", error);
-  } finally {
-    await session.endSession();
   }
 };
 

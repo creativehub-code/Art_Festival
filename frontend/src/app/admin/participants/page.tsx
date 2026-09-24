@@ -154,7 +154,11 @@ export default function ParticipantsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 50;
   
-  const { data: paginatedData } = usePaginatedParticipants(currentPage, itemsPerPage);
+  const [search, setSearch] = useState('');
+  const [filterGroupId, setFilterGroupId] = useState('');
+  const [filterTeamId, setFilterTeamId] = useState('');
+
+  const { data: paginatedData } = usePaginatedParticipants(currentPage, itemsPerPage, filterGroupId, filterTeamId, search);
   const participants = paginatedData?.data || [];
   const backendTotal = paginatedData?.total || 0;
   const backendTotalPages = paginatedData?.pages || 1;
@@ -204,9 +208,6 @@ export default function ParticipantsPage() {
     return () => clearTimeout(delayDebounceFn);
   }, [createPartnerSearchQ, form.programId, form.teamId, form.groupId, programs, createGroupPartners]);
 
-  const [search, setSearch] = useState('');
-  const [filterGroupId, setFilterGroupId] = useState('');
-  const [filterTeamId, setFilterTeamId] = useState('');
   const [hoveredParticipant, setHoveredParticipant] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [viewParticipant, setViewParticipant] = useState<any>(null);
@@ -468,18 +469,7 @@ export default function ParticipantsPage() {
     setCurrentPage(1);
   }, [search, filterGroupId, filterTeamId]);
 
-  // Memoized filtered participants
-  const filteredParticipants = useMemo(() => {
-    return participants.filter((p: any) => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.chestNumber.toLowerCase().includes(search.toLowerCase());
-      const matchGroup = filterGroupId === '' || p.groupId?._id === filterGroupId || p.groupId === filterGroupId;
-      const matchTeam = filterTeamId === '' || p.teamId?._id === filterTeamId || p.teamId === filterTeamId;
-      return matchSearch && matchGroup && matchTeam;
-    });
-  }, [participants, search, filterGroupId, filterTeamId]);
-
-  // Slice for current page removed since backend handles pagination
-  const paginatedParticipants = filteredParticipants;
+  const paginatedParticipants = participants;
 
 
   return (
@@ -908,7 +898,7 @@ export default function ParticipantsPage() {
 
       {/* Participant List (Table) */}
       {/* Participant List (Table & Mobile Cards) */}
-      {filteredParticipants.length === 0 ? (
+      {paginatedParticipants.length === 0 ? (
             <div className="col-span-full text-center p-16 bg-[#0F1120]/50 rounded-3xl border border-dashed border-white/[0.07] relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-t from-purple-900/10 to-transparent pointer-events-none" />
                 <div className="w-20 h-20 bg-white/[0.03] rounded-full flex items-center justify-center mx-auto mb-6 border border-white/[0.07] group-hover:border-purple-500/50 transition-colors shadow-lg shadow-purple-900/10">
@@ -1033,7 +1023,7 @@ export default function ParticipantsPage() {
               </div>
             );
           })}
-          {filteredParticipants.length === 0 && (
+          {paginatedParticipants.length === 0 && (
             <div className="py-8 text-center text-gray-600">No participants found.</div>
           )}
         </div>
@@ -1073,7 +1063,7 @@ export default function ParticipantsPage() {
                     <div className="absolute right-0 top-0 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
                 </div>
             ))}
-             {filteredParticipants.length === 0 && (
+             {paginatedParticipants.length === 0 && (
                 <div className="text-center py-10 text-gray-500">No participants found.</div>
             )}
         </div>
