@@ -187,6 +187,19 @@ export const useGroupParticipants = (groupId: string | null, page: number = 1, l
   });
 };
 
+export const useProgramParticipants = (programId: string | null) => {
+  return useQuery({
+    queryKey: ['programParticipants', programId],
+    queryFn: async () => {
+      if (!programId) return [];
+      const data = await apiRequest(`/programs/${programId}/participants`);
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: !!programId,
+    staleTime: 1 * 60 * 1000,
+  });
+};
+
 export const useJudges = () => {
   return useQuery<Judge[]>({
     queryKey: ['judges'],
@@ -357,6 +370,7 @@ export const useInvalidate = () => {
     invalidateMarks: (programId: string) => queryClient.invalidateQueries({ queryKey: ['marks', programId] }),
     invalidateTeamParticipants: (teamId: string) => queryClient.invalidateQueries({ queryKey: ['teamParticipants', teamId] }),
     invalidateGroupParticipants: (groupId: string) => queryClient.invalidateQueries({ queryKey: ['groupParticipants', groupId] }),
+    invalidateProgramParticipants: (programId: string) => queryClient.invalidateQueries({ queryKey: ['programParticipants', programId] }),
     // Review Marks targeted invalidation
     invalidateReviewPrograms: () => queryClient.invalidateQueries({ queryKey: ['reviewPrograms'] }),
     invalidateReviewProgramMarks: (programId: string) =>

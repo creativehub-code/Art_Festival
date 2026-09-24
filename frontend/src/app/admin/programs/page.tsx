@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown } from 'lucide-react';
-import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate } from '@/lib/queries';
+import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -1653,10 +1653,9 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
 
 function ParticipantsTab({ program, participants }: { program: any; participants: any[] }) {
     const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>('default');
+    const { data: programParticipants = [] } = useProgramParticipants(program._id);
 
-    const enrolledParticipants = useMemo(() => {
-        return participants.filter(p => p.programs?.some((prog: any) => prog._id === program._id || prog === program._id));
-    }, [participants, program._id]);
+    const enrolledParticipants = programParticipants;
 
     const sortedParticipants = useMemo(() => {
         if (sortOrder === 'default') return enrolledParticipants;

@@ -147,7 +147,7 @@ export default function ParticipantsPage() {
   const { data: groups = [] as any[] } = useGroups();
   const { data: teams = [] as any[] } = useTeams();
   const { data: programs = [] as any[] } = usePrograms();
-  const { invalidateParticipants, invalidateTeams, invalidateGroups, invalidateTeamParticipants, invalidateGroupParticipants } = useInvalidate();
+  const { invalidateParticipants, invalidateTeams, invalidateGroups, invalidateTeamParticipants, invalidateGroupParticipants, invalidateProgramParticipants } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -427,6 +427,7 @@ export default function ParticipantsPage() {
         image: form.image
       });
       invalidateParticipants();
+      finalPrograms.forEach((pid: string) => invalidateProgramParticipants(pid));
       if (form.teamId) {
         invalidateTeams();
         invalidateTeamParticipants(form.teamId);
@@ -453,10 +454,13 @@ export default function ParticipantsPage() {
   const confirmDeleteParticipant = async () => {
     if (!deleteConfirmId) return;
     try {
+      const target = participants.find((p: any) => p._id === deleteConfirmId);
+      const programsToInvalidate = target?.programs?.map((p: any) => p._id || p) || [];
       await apiRequest(`/participants/${deleteConfirmId}`, 'DELETE');
       invalidateParticipants();
       invalidateTeams();
       invalidateGroups();
+      programsToInvalidate.forEach((pid: string) => invalidateProgramParticipants(pid));
       addToast({ title: 'Participant Deleted', message: 'Participant deleted successfully.', type: 'info' });
     } catch (e: any) { 
       addToast({ title: 'Delete Failed', message: e.message || 'Failed to delete participant', type: 'error' }); 
@@ -1261,6 +1265,9 @@ export default function ParticipantsPage() {
                                 setShowAddProgramModal(false);
                                 setProgramForm({ language: '', programId: '', topicId: '', selectedPrograms: [], selectedTopics: {} });
                                 invalidateParticipants();
+                                const oldPrograms = selectedParticipantForProgram.programs?.map((p: any) => p._id || p) || [];
+                                const allAffected = Array.from(new Set([...oldPrograms, ...uniquePrograms]));
+                                allAffected.forEach((pid: string) => invalidateProgramParticipants(pid));
                                 if (selectedParticipantForProgram.teamId?._id) invalidateTeamParticipants(selectedParticipantForProgram.teamId._id);
                                 if (selectedParticipantForProgram.groupId?._id) invalidateGroupParticipants(selectedParticipantForProgram.groupId._id);
                             } catch(e:any) {
@@ -1607,6 +1614,10 @@ export default function ParticipantsPage() {
                                             setPartnerSearchQ('');
                                             setOfficialChestId('');
                                             invalidateParticipants();
+                                            const oldPrograms = viewParticipant.programs?.map((p: any) => p._id || p) || [];
+                                            const newPrograms = updated.programs?.map((p: any) => p._id || p) || [];
+                                            const allAffected = Array.from(new Set([...oldPrograms, ...newPrograms]));
+                                            allAffected.forEach((pid: string) => invalidateProgramParticipants(pid));
                                             if (viewParticipant.teamId?._id || viewParticipant.teamId) invalidateTeamParticipants(viewParticipant.teamId?._id || viewParticipant.teamId);
                                             if (viewParticipant.groupId?._id || viewParticipant.groupId) invalidateGroupParticipants(viewParticipant.groupId?._id || viewParticipant.groupId);
                                         } catch(e:any) {
