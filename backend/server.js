@@ -10,14 +10,11 @@ const jwt = require("jsonwebtoken");
 const { setCsrfToken, validateCsrf } = require("./middleware/csrfMiddleware");
 
 const connectDB = require("./config/db");
-const seedLanguages = require("./scripts/seedLanguages");
 
 dotenv.config();
 
-// Connect to Database & seed default languages
-connectDB().then(() => {
-  seedLanguages();
-});
+// Connect to Database
+connectDB();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
