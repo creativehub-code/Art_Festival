@@ -639,9 +639,10 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
       }
     }
 
-    if (currentPosition === 1) rankPoints = settings.firstPlacePoints;
-    else if (currentPosition === 2) rankPoints = settings.secondPlacePoints;
-    else if (currentPosition === 3) rankPoints = settings.thirdPlacePoints;
+    const positionCount = program.positionCount || 3;
+    if (currentPosition === 1 && positionCount >= 1) rankPoints = settings.firstPlacePoints;
+    else if (currentPosition === 2 && positionCount >= 2) rankPoints = settings.secondPlacePoints;
+    else if (currentPosition === 3 && positionCount >= 3) rankPoints = settings.thirdPlacePoints;
     else rankPoints = 0;
 
     if (rankPoints > 0) {

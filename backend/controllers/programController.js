@@ -179,7 +179,7 @@ const getPrograms = async (req, res) => {
 const createProgram = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount } = req.body;
 
     // Validate positions
     let globalPosition, languagePosition;
@@ -212,6 +212,13 @@ const createProgram = async (req, res) => {
     if (isConversation !== undefined) payload.isConversation = isConversation;
     if (topics !== undefined)         payload.topics = topics;
     
+    if (positionCount !== undefined) {
+      if (![1, 2, 3].includes(positionCount)) {
+        return res.status(400).json({ message: "positionCount must be 1, 2, or 3" });
+      }
+      payload.positionCount = positionCount;
+    }
+
     payload.criteriaEnabled = isCriteriaEnabled;
     payload.criteria = validCriteria;
 
@@ -251,7 +258,7 @@ const updateProgram = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount } = req.body;
 
     // Validate positions
     let newGlobalPosition, newLanguagePosition;
@@ -279,6 +286,13 @@ const updateProgram = async (req, res) => {
     if (language !== undefined)       updateData.language = language;
     if (isConversation !== undefined) updateData.isConversation = isConversation;
     if (topics !== undefined)         updateData.topics = topics;
+
+    if (positionCount !== undefined) {
+      if (![1, 2, 3].includes(positionCount)) {
+        return res.status(400).json({ message: "positionCount must be 1, 2, or 3" });
+      }
+      updateData.positionCount = positionCount;
+    }
 
     if (newGlobalPosition !== undefined) updateData.globalPosition = newGlobalPosition;
     if (newLanguagePosition !== undefined) updateData.languagePosition = newLanguagePosition;

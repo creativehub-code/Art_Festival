@@ -74,6 +74,12 @@ const programSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    // Number of result positions (1, 2, or 3)
+    positionCount: {
+      type: Number,
+      enum: [1, 2, 3],
+      default: 3,
+    },
   },
   {
     timestamps: true,

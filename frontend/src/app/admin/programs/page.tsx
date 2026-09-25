@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown } from 'lucide-react';
-import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants } from '@/lib/queries';
+import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown, Trophy } from 'lucide-react';
+import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants, useConversationPairs } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -1070,6 +1070,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
         isConversation: false,
         globalPosition: '',
         languagePosition: '',
+        positionCount: 3,
         criteriaEnabled: false,
         criteria: [] as Array<{ title: string; maxMarks: string | number }>,
     });
@@ -1096,6 +1097,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 isConversation: false,
                 globalPosition: '',
                 languagePosition: '',
+                positionCount: 3,
                 criteriaEnabled: false,
                 criteria: [],
             }));
@@ -1153,6 +1155,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 isConversation: form.isConversation,
                 globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
                 languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+                positionCount: form.positionCount,
                 criteriaEnabled: form.criteriaEnabled,
                 criteria: form.criteriaEnabled ? form.criteria.map((c, idx) => ({ title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
             };
@@ -1272,24 +1275,40 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                 </div>
                             </div>
 
-                            {/* Row 3: Status */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block">STATUS</label>
-                                <div className="grid grid-cols-3 gap-3">
-                                    {['upcoming', 'ongoing', 'completed'].map(status => (
-                                        <button
-                                            key={status}
-                                            type="button"
-                                            onClick={() => setForm({...form, status})}
-                                            className={`py-3 px-4 rounded-2xl border text-sm capitalize font-bold transition-all ${
-                                                form.status === status
-                                                ? 'bg-[#A855F7] border-[#A855F7] text-white shadow-lg shadow-purple-600/25'
-                                                : 'bg-[#110E1B] border-[#2A243A] text-gray-300 hover:border-gray-600'
-                                            }`}
-                                        >
-                                            {status}
-                                        </button>
-                                    ))}
+                            {/* Row 3: Status & Position Count */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block">STATUS</label>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        {['upcoming', 'ongoing', 'completed'].map(status => (
+                                            <button
+                                                key={status}
+                                                type="button"
+                                                onClick={() => setForm({...form, status})}
+                                                className={`py-3 px-4 rounded-2xl border text-sm capitalize font-bold transition-all ${
+                                                    form.status === status
+                                                    ? 'bg-[#A855F7] border-[#A855F7] text-white shadow-lg shadow-purple-600/25'
+                                                    : 'bg-[#110E1B] border-[#2A243A] text-gray-300 hover:border-gray-600'
+                                                }`}
+                                            >
+                                                {status}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                                        <Trophy size={14} className="text-yellow-400" /> POSITION COUNT
+                                    </label>
+                                    <select
+                                        value={form.positionCount}
+                                        onChange={e => setForm({...form, positionCount: Number(e.target.value)})}
+                                        className="w-full px-4 py-3 rounded-2xl bg-[#110E1B] border border-[#2A243A] text-white font-semibold focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm cursor-pointer"
+                                    >
+                                        <option value={1}>1st Only</option>
+                                        <option value={2}>1st + 2nd</option>
+                                        <option value={3}>1st + 2nd + 3rd</option>
+                                    </select>
                                 </div>
                             </div>
 
@@ -1410,6 +1429,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
         isConversation: program.isConversation || false,
         globalPosition: program.globalPosition != null ? String(program.globalPosition) : '',
         languagePosition: program.languagePosition != null ? String(program.languagePosition) : '',
+        positionCount: program.positionCount || 3,
         criteriaEnabled: program.criteriaEnabled || false,
         criteria: (program.criteria || []).map((c: any) => ({ _id: c._id, title: c.title, maxMarks: c.maxMarks })),
     });
@@ -1461,6 +1481,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                 isConversation: form.isConversation,
                 globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
                 languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+                positionCount: form.positionCount,
                 criteriaEnabled: form.criteriaEnabled,
                 criteria: form.criteriaEnabled ? form.criteria.map((c: any, idx: number) => ({ _id: c._id, title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
             };
@@ -1556,24 +1577,40 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                             </div>
                         </div>
 
-                        {/* Status */}
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {['upcoming', 'ongoing', 'completed'].map(status => (
-                                    <button
-                                        key={status}
-                                        type="button"
-                                        onClick={() => setForm({...form, status})}
-                                        className={`p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm capitalize font-bold transition-all ${
-                                            form.status === status
-                                            ? 'bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-900/20'
-                                            : 'bg-[#13111C] border-[#2D283E] text-gray-400 hover:border-gray-600'
-                                        }`}
-                                    >
-                                        {status}
-                                    </button>
-                                ))}
+                        {/* Status & Position Count */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['upcoming', 'ongoing', 'completed'].map(status => (
+                                        <button
+                                            key={status}
+                                            type="button"
+                                            onClick={() => setForm({...form, status})}
+                                            className={`p-2.5 sm:p-3 rounded-xl border text-xs sm:text-sm capitalize font-bold transition-all ${
+                                                form.status === status
+                                                ? 'bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-900/20'
+                                                : 'bg-[#13111C] border-[#2D283E] text-gray-400 hover:border-gray-600'
+                                            }`}
+                                        >
+                                            {status}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Trophy size={13} className="text-yellow-400" /> Position Count
+                                </label>
+                                <select
+                                    value={form.positionCount}
+                                    onChange={e => setForm({...form, positionCount: Number(e.target.value)})}
+                                    className="w-full px-3 py-2.5 sm:py-3 rounded-xl bg-[#13111C] border border-[#2D283E] text-white font-semibold focus:border-purple-500 focus:outline-none transition-colors appearance-none text-xs sm:text-sm cursor-pointer"
+                                >
+                                    <option value={1}>1st Only</option>
+                                    <option value={2}>1st + 2nd</option>
+                                    <option value={3}>1st + 2nd + 3rd</option>
+                                </select>
                             </div>
                         </div>
 
@@ -1651,43 +1688,96 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
     );
 }
 
+const compareParticipants = (a: any, b: any, order: 'asc' | 'desc') => {
+    const rawA = a.chestNumber != null ? String(a.chestNumber).trim() : '';
+    const rawB = b.chestNumber != null ? String(b.chestNumber).trim() : '';
+
+    const numA = parseInt(rawA, 10);
+    const numB = parseInt(rawB, 10);
+
+    const isNumA = rawA !== '' && !isNaN(numA);
+    const isNumB = rawB !== '' && !isNaN(numB);
+
+    let cmp = 0;
+    if (isNumA && isNumB) {
+        cmp = numA - numB;
+    } else if (isNumA && !isNumB) {
+        cmp = -1;
+    } else if (!isNumA && isNumB) {
+        cmp = 1;
+    } else {
+        cmp = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    if (cmp === 0) {
+        cmp = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    return order === 'asc' ? cmp : -cmp;
+};
+
 function ParticipantsTab({ program, participants }: { program: any; participants: any[] }) {
     const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>('default');
     const { data: programParticipants = [] } = useProgramParticipants(program._id);
+    const { data: conversationPairs = [] } = useConversationPairs(program._id, !!program.isConversation);
 
     const enrolledParticipants = programParticipants;
 
     const sortedParticipants = useMemo(() => {
         if (sortOrder === 'default') return enrolledParticipants;
-
-        return [...enrolledParticipants].sort((a: any, b: any) => {
-            const rawA = a.chestNumber != null ? String(a.chestNumber).trim() : '';
-            const rawB = b.chestNumber != null ? String(b.chestNumber).trim() : '';
-
-            const numA = parseInt(rawA, 10);
-            const numB = parseInt(rawB, 10);
-
-            const isNumA = rawA !== '' && !isNaN(numA);
-            const isNumB = rawB !== '' && !isNaN(numB);
-
-            let cmp = 0;
-            if (isNumA && isNumB) {
-                cmp = numA - numB;
-            } else if (isNumA && !isNumB) {
-                cmp = -1;
-            } else if (!isNumA && isNumB) {
-                cmp = 1;
-            } else {
-                cmp = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
-            }
-
-            if (cmp === 0) {
-                cmp = rawA.localeCompare(rawB, undefined, { numeric: true, sensitivity: 'base' });
-            }
-
-            return sortOrder === 'asc' ? cmp : -cmp;
-        });
+        return [...enrolledParticipants].sort((a: any, b: any) => compareParticipants(a, b, sortOrder));
     }, [enrolledParticipants, sortOrder]);
+
+    const displayItems = useMemo(() => {
+        const items: any[] = [];
+        if (program.isConversation) {
+            const pairedParticipantIds = new Set();
+            conversationPairs.forEach((pair: any, pairIndex: number) => {
+                const pairParticipants = (pair.participants || [])
+                    .map((pp: any) => enrolledParticipants.find((p: any) => p._id === (pp._id || pp)))
+                    .filter(Boolean);
+
+                if (pairParticipants.length > 0) {
+                    items.push({
+                        type: 'pair',
+                        _id: pair._id,
+                        participants: pairParticipants,
+                        pairIndex
+                    });
+                    pairParticipants.forEach((p: any) => pairedParticipantIds.add(p._id));
+                }
+            });
+
+            enrolledParticipants.forEach((p: any) => {
+                if (!pairedParticipantIds.has(p._id)) {
+                    items.push({ type: 'individual', participant: p, _id: p._id });
+                }
+            });
+
+            if (sortOrder !== 'default') {
+                items.sort((itemA, itemB) => {
+                    const getSortKey = (item: any) => {
+                        if (item.type === 'individual') return item.participant;
+
+                        let minP = item.participants[0];
+                        for (let i = 1; i < item.participants.length; i++) {
+                            if (compareParticipants(item.participants[i], minP, 'asc') < 0) {
+                                minP = item.participants[i];
+                            }
+                        }
+                        return minP;
+                    };
+
+                    return compareParticipants(getSortKey(itemA), getSortKey(itemB), sortOrder);
+                });
+            }
+        } else {
+            sortedParticipants.forEach((p: any) => {
+                items.push({ type: 'individual', participant: p, _id: p._id });
+            });
+        }
+        return items;
+    }, [enrolledParticipants, sortedParticipants, program.isConversation, conversationPairs, sortOrder]);
 
     if (enrolledParticipants.length === 0) {
         return (
@@ -1697,6 +1787,40 @@ function ParticipantsTab({ program, participants }: { program: any; participants
             </div>
         );
     }
+
+    const renderParticipantDetails = (p: any, indexLabel: string | number) => (
+        <div key={p._id} className="flex items-center gap-4 py-2 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
+            <div className="font-mono text-gray-500 text-sm w-6 text-center">{indexLabel}</div>
+            <div className="relative w-10 h-10 flex-shrink-0">
+                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border-2 border-white/10">
+                    {p.name.charAt(0)}
+                </div>
+                <img
+                    src={`${API_BASE_URL}/participants/${p._id}/photo`}
+                    alt={p.name}
+                    loading="lazy"
+                    className="absolute inset-0 w-full h-full rounded-full object-cover border-2 border-purple-500/30"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+            </div>
+            <div className="flex-1">
+                <h4 className="text-gray-200 font-bold text-sm">{p.name}</h4>
+                <p className="text-gray-500 text-xs flex items-center gap-2">
+                    <span className="font-mono text-purple-400">{p.chestNumber}</span> &middot;
+                    <span>{p.teamId?.name || 'No Team'}</span>
+                    {p.programTopics?.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId && (
+                        <>
+                            &middot;
+                            <span className="text-purple-400/80 italic flex items-center gap-1">
+                                <FileText size={10} />
+                                {program.topics?.find((t:any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
+                            </span>
+                        </>
+                    )}
+                </p>
+            </div>
+        </div>
+    );
 
     return (
         <div className="space-y-3">
@@ -1725,39 +1849,26 @@ function ParticipantsTab({ program, participants }: { program: any; participants
             </div>
 
             <div className="divide-y divide-[#2D283E] custom-scrollbar overflow-y-auto max-h-[400px] pr-2">
-                {sortedParticipants.map((p: any, i) => (
-                    <div key={p._id} className="flex items-center gap-4 py-3 hover:bg-white/[0.02] px-2 rounded-lg transition-colors">
-                        <div className="font-mono text-gray-500 text-sm w-6">{i + 1}</div>
-                        <div className="relative w-10 h-10 flex-shrink-0">
-                            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border-2 border-white/10">
-                                {p.name.charAt(0)}
+                {displayItems.map((item, i) => {
+                    if (item.type === 'pair') {
+                        return (
+                            <div key={item._id} className="py-3 px-2">
+                                <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 px-2 flex items-center gap-2">
+                                    <Users size={14} /> Pair {item.pairIndex + 1}
+                                </div>
+                                <div className="space-y-1 bg-white/[0.01] rounded-xl p-1 border border-white/[0.03]">
+                                    {item.participants.map((p: any, idx: number) => renderParticipantDetails(p, String.fromCharCode(65 + idx)))}
+                                </div>
                             </div>
-                            <img 
-                                src={`${API_BASE_URL}/participants/${p._id}/photo`} 
-                                alt={p.name} 
-                                loading="lazy"
-                                className="absolute inset-0 w-full h-full rounded-full object-cover border-2 border-purple-500/30"
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                            />
-                        </div>
-                        <div className="flex-1">
-                            <h4 className="text-gray-200 font-bold text-sm">{p.name}</h4>
-                            <p className="text-gray-500 text-xs flex items-center gap-2">
-                                <span className="font-mono text-purple-400">{p.chestNumber}</span> &middot; 
-                                <span>{p.teamId?.name || 'No Team'}</span>
-                                {p.programTopics?.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId && (
-                                    <>
-                                        &middot;
-                                        <span className="text-purple-400/80 italic flex items-center gap-1">
-                                            <FileText size={10} />
-                                            {program.topics?.find((t:any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
-                                        </span>
-                                    </>
-                                )}
-                            </p>
-                        </div>
-                    </div>
-                ))}
+                        );
+                    } else {
+                        return (
+                            <div key={item._id} className="py-1">
+                                {renderParticipantDetails(item.participant, i + 1)}
+                            </div>
+                        );
+                    }
+                })}
             </div>
         </div>
     );
