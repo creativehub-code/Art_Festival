@@ -775,24 +775,19 @@ export default function MarksReviewPage() {
 
                                     {/* Rank */}
                                     <div className="col-span-1 text-right">
-                                        {m.rank === 1 && (
+                                        {m.rank === 1 && (selectedProgramData?.positionCount || 3) >= 1 && (
                                             <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-yellow-500/20 text-yellow-400 font-bold border border-yellow-500/30 text-xs gap-1.5">
                                                 <Trophy size={12} /> 1st
                                             </span>
                                         )}
-                                        {m.rank === 2 && (
+                                        {m.rank === 2 && (selectedProgramData?.positionCount || 3) >= 2 && (
                                             <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-gray-300/20 text-gray-300 font-bold border border-gray-400/30 text-xs gap-1.5">
                                                 <Trophy size={12} /> 2nd
                                             </span>
                                         )}
-                                        {m.rank === 3 && (
+                                        {m.rank === 3 && (selectedProgramData?.positionCount || 3) >= 3 && (
                                             <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-full bg-orange-500/20 text-orange-400 font-bold border border-orange-500/30 text-xs gap-1.5">
                                                 <Trophy size={12} /> 3rd
-                                            </span>
-                                        )}
-                                        {m.rank > 3 && (
-                                            <span className="text-gray-500 font-bold font-mono text-lg pr-2">
-                                                #{m.rank}
                                             </span>
                                         )}
                                     </div>

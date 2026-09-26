@@ -509,14 +509,127 @@ const getProgramParticipants = async (req, res) => {
       query.groupId = program.groupId;
     }
 
+    const mode = program.judgeDisplayOrderMode || 'default';
+
+    // For 'default' and 'custom' we fetch unsorted first, then apply order in JS.
+    // For 'asc'/'desc' we let MongoDB do the sort.
+    let mongoSort;
+    if (mode === 'asc') {
+      mongoSort = { chestNumber: 1, name: 1 };
+    } else if (mode === 'desc') {
+      mongoSort = { chestNumber: -1, name: -1 };
+    } else {
+      // 'default' and 'custom' — use the existing default (chestNumber ASC) as base fetch order
+      mongoSort = { chestNumber: 1, name: 1 };
+    }
+
     const participants = await Participant.find(query)
       .select("-image")
       .populate("teamId", "name")
       .populate("groupId", "name")
       .populate("programs", "name language")
-      .sort({ chestNumber: 1, name: 1 });
+      .sort(mongoSort);
+
+    if (mode === 'custom' && program.customJudgeDisplayOrder && program.customJudgeDisplayOrder.length > 0) {
+      const orderMap = new Map();
+      program.customJudgeDisplayOrder.forEach((id, idx) => {
+        orderMap.set(id.toString(), idx);
+      });
+
+      participants.sort((a, b) => {
+        const ai = orderMap.has(a._id.toString()) ? orderMap.get(a._id.toString()) : Infinity;
+        const bi = orderMap.has(b._id.toString()) ? orderMap.get(b._id.toString()) : Infinity;
+        if (ai !== bi) return ai - bi;
+        // Deterministic fallback for newly added participants not yet in custom order
+        const ca = parseInt(String(a.chestNumber || ''), 10);
+        const cb = parseInt(String(b.chestNumber || ''), 10);
+        if (!isNaN(ca) && !isNaN(cb)) return ca - cb;
+        return String(a.chestNumber || '').localeCompare(String(b.chestNumber || ''));
+      });
+    }
 
     res.json(participants);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Update the Judge Display Order for a program
+// @route   PATCH /api/programs/:id/display-order
+// @access  Admin only
+const updateDisplayOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid program ID format" });
+    }
+
+    const program = await Program.findById(id);
+    if (!program) {
+      return res.status(404).json({ message: "Program not found" });
+    }
+
+    const { judgeDisplayOrderMode, customJudgeDisplayOrder } = req.body;
+
+    const allowedModes = ['default', 'asc', 'desc', 'custom'];
+    if (!allowedModes.includes(judgeDisplayOrderMode)) {
+      return res.status(400).json({ message: `judgeDisplayOrderMode must be one of: ${allowedModes.join(', ')}` });
+    }
+
+    let validatedOrder = [];
+
+    if (judgeDisplayOrderMode === 'custom') {
+      if (!Array.isArray(customJudgeDisplayOrder)) {
+        return res.status(400).json({ message: 'customJudgeDisplayOrder must be an array' });
+      }
+
+      // Validate each ID is a valid ObjectId
+      for (const rawId of customJudgeDisplayOrder) {
+        if (!mongoose.Types.ObjectId.isValid(rawId)) {
+          return res.status(400).json({ message: `Invalid ObjectId in customJudgeDisplayOrder: ${rawId}` });
+        }
+      }
+
+      // Reject duplicate IDs
+      const idStrings = customJudgeDisplayOrder.map(id => id.toString());
+      if (new Set(idStrings).size !== idStrings.length) {
+        return res.status(400).json({ message: 'customJudgeDisplayOrder must not contain duplicate IDs' });
+      }
+
+      if (program.isConversation) {
+        // For conversation programs, validate that IDs belong to ConversationPairs of this program
+        const ConversationPair = require('../models/ConversationPair');
+        const pairs = await ConversationPair.find({ programId: id }).select('_id');
+        const pairIdSet = new Set(pairs.map(p => p._id.toString()));
+        for (const rawId of customJudgeDisplayOrder) {
+          if (!pairIdSet.has(rawId.toString())) {
+            return res.status(400).json({ message: `ID ${rawId} is not a valid ConversationPair for this program` });
+          }
+        }
+      } else {
+        // For individual programs, validate that IDs belong to participants of this program
+        const participantIds = customJudgeDisplayOrder.map(id => new mongoose.Types.ObjectId(id));
+        const query = { _id: { $in: participantIds }, programs: id };
+        if (program.groupId) query.groupId = program.groupId;
+        const foundParticipants = await Participant.find(query).select('_id');
+        if (foundParticipants.length !== participantIds.length) {
+          return res.status(400).json({ message: 'One or more IDs in customJudgeDisplayOrder do not belong to this program' });
+        }
+      }
+
+      validatedOrder = customJudgeDisplayOrder;
+    }
+
+    program.judgeDisplayOrderMode = judgeDisplayOrderMode;
+    program.customJudgeDisplayOrder = validatedOrder;
+    await program.save();
+
+    res.json({
+      message: 'Display order updated successfully',
+      judgeDisplayOrderMode: program.judgeDisplayOrderMode,
+      customJudgeDisplayOrder: program.customJudgeDisplayOrder,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -772,6 +885,7 @@ module.exports = {
   deleteProgram,
   getPublicPrograms,
   getProgramParticipants,
+  updateDisplayOrder,
   addTopic,
   updateTopic,
   deleteTopic,

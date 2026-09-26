@@ -442,9 +442,9 @@ export default function ProgramMarkingPage() {
                         <span className={topicTitle === 'No topic assigned' ? 'text-gray-500 italic text-xs' : 'text-gray-200'}>
                           {topicTitle}
                         </span>
-                        {rank === 1 && <span className="text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded border border-yellow-500/20">1ST</span>}
-                        {rank === 2 && <span className="text-[10px] font-bold text-gray-300 bg-gray-400/10 px-1.5 py-0.5 rounded border border-gray-400/20">2ND</span>}
-                        {rank === 3 && <span className="text-[10px] font-bold text-orange-400 bg-orange-700/10 px-1.5 py-0.5 rounded border border-orange-700/20">3RD</span>}
+                        {rank === 1 && (program?.positionCount || 3) >= 1 && <span className="text-[10px] font-bold text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded border border-yellow-500/20">1ST</span>}
+                        {rank === 2 && (program?.positionCount || 3) >= 2 && <span className="text-[10px] font-bold text-gray-300 bg-gray-400/10 px-1.5 py-0.5 rounded border border-gray-400/20">2ND</span>}
+                        {rank === 3 && (program?.positionCount || 3) >= 3 && <span className="text-[10px] font-bold text-orange-400 bg-orange-700/10 px-1.5 py-0.5 rounded border border-orange-700/20">3RD</span>}
                       </div>
                     </td>
                     

@@ -80,6 +80,19 @@ const programSchema = new mongoose.Schema(
       enum: [1, 2, 3],
       default: 3,
     },
+
+    // Judge Display Order: admin-controlled participant/pair ordering for the Judge Panel
+    judgeDisplayOrderMode: {
+      type: String,
+      enum: ['default', 'asc', 'desc', 'custom'],
+      default: 'default',
+    },
+
+    // Stores ordered ObjectIds of Participant (individual) or ConversationPair (conversation) documents
+    // Only meaningful when judgeDisplayOrderMode === 'custom'
+    customJudgeDisplayOrder: [{
+      type: mongoose.Schema.Types.ObjectId,
+    }],
   },
   {
     timestamps: true,

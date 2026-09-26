@@ -150,10 +150,59 @@ const createPair = async (req, res) => {
 const getPairsByProgram = async (req, res) => {
   try {
     const { programId } = req.params;
+
+    // Fetch parent program to read display order mode
+    const program = await Program.findById(programId).select('judgeDisplayOrderMode customJudgeDisplayOrder');
+    const mode = program ? (program.judgeDisplayOrderMode || 'default') : 'default';
+
+    // Fetch all pairs with populated participants (needed for chest-number sort keys)
     const pairs = await ConversationPair.find({ programId })
-      .populate("participants", "name chestNumber programTopics")
-      .populate("primaryParticipantId", "name chestNumber programTopics")
-      .sort({ createdAt: 1 });
+      .populate('participants', 'name chestNumber programTopics')
+      .populate('primaryParticipantId', 'name chestNumber programTopics');
+
+    if (mode === 'default') {
+      // Preserve the original behaviour exactly: createdAt ascending
+      pairs.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    } else if (mode === 'asc' || mode === 'desc') {
+      // Sort pairs by minimum member chest number - whole pair moves as one unit
+      const getPairSortKey = (pair) => {
+        let minNum = Infinity;
+        for (const p of (pair.participants || [])) {
+          const num = parseInt(String(p.chestNumber || ''), 10);
+          if (!isNaN(num) && num < minNum) minNum = num;
+        }
+        return minNum === Infinity ? String(pair.participants && pair.participants[0] ? pair.participants[0].chestNumber || '' : '') : minNum;
+      };
+
+      pairs.sort((a, b) => {
+        const ka = getPairSortKey(a);
+        const kb = getPairSortKey(b);
+        let cmp;
+        if (typeof ka === 'number' && typeof kb === 'number') {
+          cmp = ka - kb;
+        } else {
+          cmp = String(ka).localeCompare(String(kb), undefined, { numeric: true, sensitivity: 'base' });
+        }
+        return mode === 'asc' ? cmp : -cmp;
+      });
+    } else if (mode === 'custom' && program && program.customJudgeDisplayOrder && program.customJudgeDisplayOrder.length > 0) {
+      const orderMap = new Map();
+      program.customJudgeDisplayOrder.forEach((id, i) => {
+        orderMap.set(id.toString(), i);
+      });
+
+      pairs.sort((a, b) => {
+        const ai = orderMap.has(a._id.toString()) ? orderMap.get(a._id.toString()) : Infinity;
+        const bi = orderMap.has(b._id.toString()) ? orderMap.get(b._id.toString()) : Infinity;
+        if (ai !== bi) return ai - bi;
+        // Deterministic fallback for newly created pairs not yet in custom order: createdAt ASC
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      });
+    } else {
+      // Fallback: createdAt ascending
+      pairs.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    }
+
     res.json(pairs);
   } catch (error) {
     res.status(500).json({ message: error.message });

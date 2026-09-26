@@ -27,6 +27,9 @@ export interface Program {
   isConversation?: boolean;
   globalPosition?: number | null;
   languagePosition?: number | null;
+  positionCount?: number;
+  judgeDisplayOrderMode?: 'default' | 'asc' | 'desc' | 'custom';
+  customJudgeDisplayOrder?: string[];
 }
 
 export interface Team {
@@ -351,6 +354,33 @@ export const useReviewProgramMarks = (
 // (We will add custom mutation hooks here if needed, or inline them in components. 
 // For now, exposing a simple invalidation hook is useful)
 
+export const useUpdateDisplayOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      programId,
+      judgeDisplayOrderMode,
+      customJudgeDisplayOrder,
+    }: {
+      programId: string;
+      judgeDisplayOrderMode: 'default' | 'asc' | 'desc' | 'custom';
+      customJudgeDisplayOrder: string[];
+    }) => {
+      return apiRequest(`/programs/${programId}/display-order`, 'PATCH', {
+        judgeDisplayOrderMode,
+        customJudgeDisplayOrder,
+      });
+    },
+    onSuccess: (_data, variables) => {
+      // Invalidate programs list (so judgeDisplayOrderMode reflects in program cards)
+      queryClient.invalidateQueries({ queryKey: ['programs'] });
+      // Invalidate the sorted participant and pair lists so Admin + Judge see fresh order
+      queryClient.invalidateQueries({ queryKey: ['programParticipants', variables.programId] });
+      queryClient.invalidateQueries({ queryKey: ['conversationPairs', variables.programId] });
+    },
+  });
+};
+
 export const useInvalidate = () => {
   const queryClient = useQueryClient();
   return {
@@ -371,6 +401,7 @@ export const useInvalidate = () => {
     invalidateTeamParticipants: (teamId: string) => queryClient.invalidateQueries({ queryKey: ['teamParticipants', teamId] }),
     invalidateGroupParticipants: (groupId: string) => queryClient.invalidateQueries({ queryKey: ['groupParticipants', groupId] }),
     invalidateProgramParticipants: (programId: string) => queryClient.invalidateQueries({ queryKey: ['programParticipants', programId] }),
+    invalidateConversationPairs: (programId: string) => queryClient.invalidateQueries({ queryKey: ['conversationPairs', programId] }),
     // Review Marks targeted invalidation
     invalidateReviewPrograms: () => queryClient.invalidateQueries({ queryKey: ['reviewPrograms'] }),
     invalidateReviewProgramMarks: (programId: string) =>

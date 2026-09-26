@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown, Trophy } from 'lucide-react';
-import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants, useConversationPairs } from '@/lib/queries';
+import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants, useConversationPairs, useUpdateDisplayOrder } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -1716,57 +1716,50 @@ const compareParticipants = (a: any, b: any, order: 'asc' | 'desc') => {
     return order === 'asc' ? cmp : -cmp;
 };
 
-function ParticipantsTab({ 
-    program, 
+function ParticipantsTab({
+    program,
     participants
-}: { 
-    program: any; 
+}: {
+    program: any;
     participants: any[];
 }) {
     const { data: programParticipants = [] } = useProgramParticipants(program._id);
     const { data: conversationPairs = [] } = useConversationPairs(program._id, !!program.isConversation);
+    const { mutate: saveDisplayOrder, isPending: isSaving } = useUpdateDisplayOrder();
+    const { addToast } = useToast();
 
-    const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem(`programParticipantSort_${program._id}`);
-            if (saved === 'asc' || saved === 'desc' || saved === 'default') {
-                return saved;
-            }
-        }
-        return 'default';
-    });
+    // Server is the source of truth. Initialise from the program prop.
+    const serverMode: 'default' | 'asc' | 'desc' | 'custom' = program.judgeDisplayOrderMode || 'default';
 
-    const handleSortChange = (order: 'default' | 'asc' | 'desc') => {
-        setSortOrder(order);
-        if (typeof window !== 'undefined') {
-            localStorage.setItem(`programParticipantSort_${program._id}`, order);
-        }
-    };
+    // Local drag state — only active when mode === 'custom'
+    const [customItems, setCustomItems] = useState<any[]>([]);
+    const [customDirty, setCustomDirty] = useState(false);
+    const dragIndexRef = React.useRef<number | null>(null);
 
     const enrolledParticipants = programParticipants;
 
-    const sortedParticipants = useMemo(() => {
-        if (sortOrder === 'default') return enrolledParticipants;
-        return [...enrolledParticipants].sort((a: any, b: any) => compareParticipants(a, b, sortOrder));
-    }, [enrolledParticipants, sortOrder]);
-
+    // Build display items from server-returned order (already sorted by the backend API)
     const displayItems = useMemo(() => {
         const items: any[] = [];
         if (program.isConversation) {
             const pairedParticipantIds = new Set();
             conversationPairs.forEach((pair: any, pairIndex: number) => {
                 const pairParticipants = (pair.participants || [])
-                    .map((pp: any) => enrolledParticipants.find((p: any) => p._id === (pp._id || pp)))
+                    .map((pp: any) => enrolledParticipants.find((p: any) => p._id === (pp._id || pp)) || pp)
                     .filter(Boolean);
 
-                if (pairParticipants.length > 0) {
+                if (pairParticipants.length > 0 || pair.participants?.length > 0) {
+                    // Use the pair's own populated participants if enrolledParticipants lookup fails
+                    const resolvedParts = pairParticipants.length > 0
+                        ? pairParticipants
+                        : (pair.participants || []);
                     items.push({
                         type: 'pair',
                         _id: pair._id,
-                        participants: pairParticipants,
+                        participants: resolvedParts,
                         pairIndex
                     });
-                    pairParticipants.forEach((p: any) => pairedParticipantIds.add(p._id));
+                    resolvedParts.forEach((p: any) => pairedParticipantIds.add(p._id || p));
                 }
             });
 
@@ -1775,33 +1768,101 @@ function ParticipantsTab({
                     items.push({ type: 'individual', participant: p, _id: p._id });
                 }
             });
-
-            if (sortOrder !== 'default') {
-                items.sort((itemA, itemB) => {
-                    const getSortKey = (item: any) => {
-                        if (item.type === 'individual') return item.participant;
-
-                        let minP = item.participants[0];
-                        for (let i = 1; i < item.participants.length; i++) {
-                            if (compareParticipants(item.participants[i], minP, 'asc') < 0) {
-                                minP = item.participants[i];
-                            }
-                        }
-                        return minP;
-                    };
-
-                    return compareParticipants(getSortKey(itemA), getSortKey(itemB), sortOrder);
-                });
-            }
         } else {
-            sortedParticipants.forEach((p: any) => {
+            enrolledParticipants.forEach((p: any) => {
                 items.push({ type: 'individual', participant: p, _id: p._id });
             });
         }
         return items;
-    }, [enrolledParticipants, sortedParticipants, program.isConversation, conversationPairs, sortOrder]);
+    }, [enrolledParticipants, program.isConversation, conversationPairs]);
 
-    if (enrolledParticipants.length === 0) {
+    // Keep a ref to the latest displayItems so the effect can read it without
+    // adding it to the dependency array (which would cause infinite loops because
+    // useMemo returns a new array reference on every render).
+    const displayItemsRef = React.useRef<any[]>(displayItems);
+    displayItemsRef.current = displayItems;
+
+    // Sync customItems ONLY when the serverMode string actually changes value,
+    // or on the very first mount when customItems is still empty.
+    const prevServerModeRef = React.useRef<string>(serverMode);
+    useEffect(() => {
+        if (prevServerModeRef.current !== serverMode || displayItemsRef.current.length === 0) {
+            setCustomItems([...displayItemsRef.current]);
+            setCustomDirty(false);
+            prevServerModeRef.current = serverMode;
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serverMode]); // intentionally omit displayItems — it's accessed via ref
+
+    // ------------------------------------------------------------------
+    // Mode change: for default/asc/desc we persist immediately.
+    // For custom we switch the UI but wait for explicit Save.
+    // ------------------------------------------------------------------
+    const handleModeChange = (newMode: 'default' | 'asc' | 'desc' | 'custom') => {
+        if (newMode === 'custom') {
+            // Enter custom mode: reset custom items from current view order
+            setCustomItems([...displayItems]);
+            setCustomDirty(false);
+            // Save mode change immediately (keep existing custom order if any)
+            const existingCustomOrder = program.customJudgeDisplayOrder || [];
+            saveDisplayOrder(
+                { programId: program._id, judgeDisplayOrderMode: 'custom', customJudgeDisplayOrder: existingCustomOrder },
+                { onError: (e: any) => addToast({ title: 'Save failed', message: e.message, type: 'error' }) }
+            );
+        } else {
+            saveDisplayOrder(
+                { programId: program._id, judgeDisplayOrderMode: newMode, customJudgeDisplayOrder: [] },
+                {
+                    onSuccess: () => addToast({ title: 'Order saved', message: `Display order set to ${newMode}`, type: 'success' }),
+                    onError: (e: any) => addToast({ title: 'Save failed', message: e.message, type: 'error' }),
+                }
+            );
+        }
+    };
+
+    // ------------------------------------------------------------------
+    // HTML5 native drag-and-drop handlers (custom mode only)
+    // ------------------------------------------------------------------
+    const handleDragStart = (e: React.DragEvent, index: number) => {
+        dragIndexRef.current = index;
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleDragOver = (e: React.DragEvent, index: number) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const fromIndex = dragIndexRef.current;
+        if (fromIndex === null || fromIndex === index) return;
+        setCustomItems(prev => {
+            const next = [...prev];
+            const [moved] = next.splice(fromIndex, 1);
+            next.splice(index, 0, moved);
+            dragIndexRef.current = index;
+            return next;
+        });
+        setCustomDirty(true);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        dragIndexRef.current = null;
+    };
+
+    // ------------------------------------------------------------------
+    // Save custom order to server
+    // ------------------------------------------------------------------
+    const handleSaveCustomOrder = () => {
+        const orderedIds = customItems.map((item: any) => item._id);
+        saveDisplayOrder(
+            { programId: program._id, judgeDisplayOrderMode: 'custom', customJudgeDisplayOrder: orderedIds },
+            {
+                onSuccess: () => { setCustomDirty(false); addToast({ title: 'Custom order saved', message: 'Judge Panel will now use this order.', type: 'success' }); },
+                onError: (e: any) => addToast({ title: 'Save failed', message: e.message, type: 'error' }),
+            }
+        );
+    };
+
+    if (enrolledParticipants.length === 0 && conversationPairs.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-10 text-gray-500">
                 <Users size={32} className="opacity-20 mb-3" />
@@ -1815,7 +1876,7 @@ function ParticipantsTab({
             <div className="font-mono text-gray-500 text-sm w-6 text-center">{indexLabel}</div>
             <div className="relative w-10 h-10 flex-shrink-0">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 flex items-center justify-center text-xs font-bold text-white border-2 border-white/10">
-                    {p.name.charAt(0)}
+                    {p.name ? p.name.charAt(0) : '?'}
                 </div>
                 <img
                     src={`${API_BASE_URL}/participants/${p._id}/photo`}
@@ -1835,7 +1896,7 @@ function ParticipantsTab({
                             &middot;
                             <span className="text-purple-400/80 italic flex items-center gap-1">
                                 <FileText size={10} />
-                                {program.topics?.find((t:any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
+                                {program.topics?.find((t: any) => t._id === p.programTopics.find((pt: any) => (pt.programId?._id || pt.programId) === program._id)?.topicId)?.title || 'Unknown Topic'}
                             </span>
                         </>
                     )}
@@ -1844,8 +1905,12 @@ function ParticipantsTab({
         </div>
     );
 
+    // Items rendered in custom mode come from local state; otherwise from server-sorted displayItems
+    const renderItems = serverMode === 'custom' ? customItems : displayItems;
+
     return (
         <div className="space-y-3">
+            {/* Header row: participant count + sort dropdown */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[#2D283E]">
                 <div className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Users size={14} className="text-purple-400" />
@@ -1859,24 +1924,55 @@ function ParticipantsTab({
                     </label>
                     <select
                         id={`sort-participants-${program._id}`}
-                        value={sortOrder}
-                        onChange={(e) => handleSortChange(e.target.value as 'default' | 'asc' | 'desc')}
-                        className="bg-[#13111C] border border-[#2D283E] focus:border-purple-500 text-gray-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer transition-colors"
+                        value={serverMode}
+                        onChange={(e) => handleModeChange(e.target.value as 'default' | 'asc' | 'desc' | 'custom')}
+                        disabled={isSaving}
+                        className="bg-[#13111C] border border-[#2D283E] focus:border-purple-500 text-gray-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer transition-colors disabled:opacity-60"
                     >
                         <option value="default">Default Order</option>
                         <option value="asc">Smallest → Largest</option>
                         <option value="desc">Largest → Smallest</option>
+                        <option value="custom">Custom Order</option>
                     </select>
+
+                    {/* Save button — only shown in custom mode when there are unsaved changes */}
+                    {serverMode === 'custom' && customDirty && (
+                        <button
+                            onClick={handleSaveCustomOrder}
+                            disabled={isSaving}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-60 transition-colors shadow"
+                        >
+                            {isSaving ? 'Saving…' : 'Save Order'}
+                        </button>
+                    )}
                 </div>
             </div>
 
+            {/* Custom order hint */}
+            {serverMode === 'custom' && (
+                <p className="text-[11px] text-indigo-400/70 flex items-center gap-1.5 px-1">
+                    <ArrowUpDown size={11} />
+                    Drag rows to reorder. Click <strong>Save Order</strong> to apply to the Judge Panel.
+                </p>
+            )}
+
+            {/* Participant / pair list */}
             <div className="divide-y divide-[#2D283E] custom-scrollbar overflow-y-auto max-h-[400px] pr-2">
-                {displayItems.map((item, i) => {
+                {renderItems.map((item: any, i: number) => {
+                    const draggable = serverMode === 'custom';
                     if (item.type === 'pair') {
                         return (
-                            <div key={item._id} className="py-3 px-2">
+                            <div
+                                key={item._id}
+                                className={`py-3 px-2 ${draggable ? 'cursor-grab active:cursor-grabbing hover:bg-white/[0.03] rounded-xl' : ''}`}
+                                draggable={draggable}
+                                onDragStart={draggable ? (e) => handleDragStart(e, i) : undefined}
+                                onDragOver={draggable ? (e) => handleDragOver(e, i) : undefined}
+                                onDrop={draggable ? handleDrop : undefined}
+                            >
                                 <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 px-2 flex items-center gap-2">
-                                    <Users size={14} /> Pair {item.pairIndex + 1}
+                                    {draggable && <span className="text-gray-600 select-none">⠿</span>}
+                                    <Users size={14} /> Pair {i + 1}
                                 </div>
                                 <div className="space-y-1 bg-white/[0.01] rounded-xl p-1 border border-white/[0.03]">
                                     {item.participants.map((p: any, idx: number) => renderParticipantDetails(p, String.fromCharCode(65 + idx)))}
@@ -1885,8 +1981,20 @@ function ParticipantsTab({
                         );
                     } else {
                         return (
-                            <div key={item._id} className="py-1">
-                                {renderParticipantDetails(item.participant, i + 1)}
+                            <div
+                                key={item._id}
+                                className={`py-1 ${draggable ? 'cursor-grab active:cursor-grabbing hover:bg-white/[0.03] rounded-lg' : ''}`}
+                                draggable={draggable}
+                                onDragStart={draggable ? (e) => handleDragStart(e, i) : undefined}
+                                onDragOver={draggable ? (e) => handleDragOver(e, i) : undefined}
+                                onDrop={draggable ? handleDrop : undefined}
+                            >
+                                <div className="flex items-center gap-1">
+                                    {draggable && <span className="text-gray-600 pl-2 select-none text-sm">⠿</span>}
+                                    <div className="flex-1">
+                                        {renderParticipantDetails(item.participant, i + 1)}
+                                    </div>
+                                </div>
                             </div>
                         );
                     }

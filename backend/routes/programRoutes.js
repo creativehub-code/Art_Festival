@@ -8,6 +8,7 @@ const {
   deleteProgram,
   getPublicPrograms,
   getProgramParticipants,
+  updateDisplayOrder,
   addTopic,
   updateTopic,
   deleteTopic,
@@ -24,6 +25,7 @@ router.patch("/:id", protect, restrictTo("admin"), updateProgram);
 router.delete("/:id", protect, restrictTo("admin"), deleteProgram);
 router.get("/public", getPublicPrograms);
 router.get("/:programId/participants", protect, getProgramParticipants);
+router.patch("/:id/display-order", protect, restrictTo("admin"), updateDisplayOrder);
 
 // Topic management
 router.post("/:id/topics", protect, restrictTo("admin"), addTopic);
