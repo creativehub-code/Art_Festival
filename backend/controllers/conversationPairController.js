@@ -76,18 +76,10 @@ const createPair = async (req, res) => {
       participants: { $in: participantIds },
     });
 
-    let targetPair = existingPairs.find(cp => cp.participants.some(p => p.toString() === effectivePrimaryId.toString()));
-    if (!targetPair && existingPairs.length > 0) {
-      targetPair = existingPairs[0];
-    }
-    
-    // Check if any participant is in a DIFFERENT pair
-    for (const cp of existingPairs) {
-      if (!targetPair || cp._id.toString() !== targetPair._id.toString()) {
-        return res.status(400).json({
-          message: "One or more participants are already registered in another group/pair for this program",
-        });
-      }
+    if (existingPairs.length > 0) {
+      return res.status(409).json({
+        message: "One or more participants are already paired in this program.",
+      });
     }
 
     // ── 6. Create or update the pair record and synchronize participants ──────
@@ -96,28 +88,16 @@ const createPair = async (req, res) => {
 
     try {
       await session.withTransaction(async () => {
-        let pair;
-        let oldParticipantIds = [];
+        const pairs = await ConversationPair.create([{
+          programId,
+          participants: participantIds,
+          primaryParticipantId: effectivePrimaryId,
+          teamId: firstP.teamId,
+          groupId: firstP.groupId,
+          topicId: topicId || null,
+        }], { session });
 
-        if (targetPair) {
-          pair = targetPair;
-          oldParticipantIds = pair.participants.map(p => p.toString());
-          pair.participants = participantIds;
-          pair.primaryParticipantId = effectivePrimaryId;
-          pair.topicId = topicId || null;
-          await pair.save({ session });
-        } else {
-          const pairs = await ConversationPair.create([{
-            programId,
-            participants: participantIds,
-            primaryParticipantId: effectivePrimaryId,
-            teamId: firstP.teamId,
-            groupId: firstP.groupId,
-            topicId: topicId || null,
-          }], { session });
-
-          pair = pairs[0];
-        }
+        const pair = pairs[0];
 
         // ── 7. Synchronize program & topic to participant records ────────────────
         await Participant.updateMany(
@@ -139,28 +119,7 @@ const createPair = async (req, res) => {
           );
         }
 
-        // Clean up removed participants if updating an existing pair
-        const removedIds = oldParticipantIds.filter(id => !participantIds.includes(id));
-        for (const rId of removedIds) {
-          const otherPairCount = await ConversationPair.countDocuments({
-            programId,
-            participants: rId,
-            _id: { $ne: pair._id }
-          }).session(session);
 
-          if (otherPairCount === 0) {
-            await Participant.findByIdAndUpdate(
-              rId,
-              {
-                $pull: {
-                  programs: programId,
-                  programTopics: { programId }
-                }
-              },
-              { session }
-            );
-          }
-        }
 
         // ── 8. Return populated pair ──────────────────────────────────────────────
         populated = await ConversationPair.findById(pair._id)
