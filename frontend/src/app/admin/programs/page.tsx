@@ -68,7 +68,6 @@ export default function ProgramsPage() {
   const [activeTab, setActiveTab] = useState<'participants' | 'topics' | 'criteria'>('participants');
   const { data: participantsRes } = useParticipants();
   const participants = participantsRes?.participants || [];
-  const [participantSorts, setParticipantSorts] = useState<Record<string, 'default' | 'asc' | 'desc'>>({});
 
   /** Sort programs within a language by languagePosition (nulls last), then by name */
   const getProgramsByLanguage = (lang: string) => {
@@ -316,7 +315,7 @@ export default function ProgramsPage() {
                                                           )}
                                                       </button>
                                                   </div>
-                                                  {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} sortOrder={participantSorts[p._id] || 'default'} onSortChange={(order) => setParticipantSorts(prev => ({ ...prev, [p._id]: order }))} />}
+                                                  {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} />}
                                                   {activeTab === 'topics' && <TopicsTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} participants={participants} />}
                                                   {activeTab === 'criteria' && <CriteriaTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} />}
                                               </div>
@@ -399,7 +398,7 @@ export default function ProgramsPage() {
                                                   <button onClick={(e) => { e.stopPropagation(); setActiveTab('topics'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'topics' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Topics</button>
                                                   <button onClick={(e) => { e.stopPropagation(); setActiveTab('criteria'); }} className={`pb-2 px-1 font-bold text-xs transition-colors border-b-2 ${activeTab === 'criteria' ? 'border-purple-500 text-purple-400' : 'border-transparent text-gray-500'}`}>Criteria ({p.criteria?.length || 0})</button>
                                               </div>
-                                              {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} sortOrder={participantSorts[p._id] || 'default'} onSortChange={(order) => setParticipantSorts(prev => ({ ...prev, [p._id]: order }))} />}
+                                              {activeTab === 'participants' && <ParticipantsTab program={p} participants={participants} />}
                                               {activeTab === 'topics' && <TopicsTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} participants={participants} />}
                                               {activeTab === 'criteria' && <CriteriaTab program={p} refreshPrograms={invalidatePrograms} addToast={addToast} />}
                                           </div>
@@ -1719,17 +1718,30 @@ const compareParticipants = (a: any, b: any, order: 'asc' | 'desc') => {
 
 function ParticipantsTab({ 
     program, 
-    participants,
-    sortOrder,
-    onSortChange 
+    participants
 }: { 
     program: any; 
     participants: any[];
-    sortOrder: 'default' | 'asc' | 'desc';
-    onSortChange: (order: 'default' | 'asc' | 'desc') => void;
 }) {
     const { data: programParticipants = [] } = useProgramParticipants(program._id);
     const { data: conversationPairs = [] } = useConversationPairs(program._id, !!program.isConversation);
+
+    const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem(`programParticipantSort_${program._id}`);
+            if (saved === 'asc' || saved === 'desc' || saved === 'default') {
+                return saved;
+            }
+        }
+        return 'default';
+    });
+
+    const handleSortChange = (order: 'default' | 'asc' | 'desc') => {
+        setSortOrder(order);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(`programParticipantSort_${program._id}`, order);
+        }
+    };
 
     const enrolledParticipants = programParticipants;
 
@@ -1848,7 +1860,7 @@ function ParticipantsTab({
                     <select
                         id={`sort-participants-${program._id}`}
                         value={sortOrder}
-                        onChange={(e) => onSortChange(e.target.value as 'default' | 'asc' | 'desc')}
+                        onChange={(e) => handleSortChange(e.target.value as 'default' | 'asc' | 'desc')}
                         className="bg-[#13111C] border border-[#2D283E] focus:border-purple-500 text-gray-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 outline-none cursor-pointer transition-colors"
                     >
                         <option value="default">Default Order</option>
