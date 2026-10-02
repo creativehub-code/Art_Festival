@@ -316,6 +316,17 @@ export default function MarksReviewPage() {
         if (!groups[catName]) groups[catName] = [];
         groups[catName].push(p);
     });
+
+    // Stable priority sort within each category: "Pending Review" programs first.
+    // A program is "Pending Review" when it has marks submitted but is not yet
+    // completed/verified. All other programs retain their existing relative order.
+    const isPendingReview = (p: any) => p.hasMarks && p.status !== 'completed';
+    Object.keys(groups).forEach(catName => {
+      const pending = groups[catName].filter(isPendingReview);
+      const others  = groups[catName].filter(p => !isPendingReview(p));
+      groups[catName] = [...pending, ...others];
+    });
+
     return groups;
   }, [filteredPrograms]);
 
