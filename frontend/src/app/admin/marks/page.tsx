@@ -23,6 +23,7 @@ export default function MarksReviewPage() {
   const [verifiedPrograms, setVerifiedPrograms] = useState<Set<string>>(new Set());
   const [verifyResults, setVerifyResults] = useState<any[] | null>(null); // position results after verify
   const [showCalculateConfirm, setShowCalculateConfirm] = useState(false);
+  const [showMissingResultsConfirm, setShowMissingResultsConfirm] = useState(false);
   const [showApproveAllConfirm, setShowApproveAllConfirm] = useState(false);
   const [isApprovingAll, setIsApprovingAll] = useState(false);
 
@@ -276,6 +277,29 @@ export default function MarksReviewPage() {
     }
   };
 
+  const confirmCalculateMissingScores = async () => {
+    setShowMissingResultsConfirm(false);
+    setVerifying(true);
+    setVerifyResults(null);
+    try {
+       const result = await apiRequest(`/marks/calculate/${selectedProgram}`, 'POST');
+       await refreshTeams();
+       await refreshParticipants();
+       invalidateIndividualRankings();
+       await refreshPrograms();
+       refreshMarks();
+
+       if (result?.positionResults?.length > 0) {
+         setVerifyResults(result.positionResults);
+       }
+       addToast({ title: 'Success', message: 'Missing results calculated successfully.', type: 'success' });
+    } catch(e: any) {
+        addToast({ title: 'Calculation Error', message: e.message, type: 'error' });
+    } finally {
+        setVerifying(false);
+    }
+  };
+
   const downloadCSV = () => {
      if (!groupedMarks.length) return;
      const headers = "Participant,Chest No,Team,Total Score,Judges Breakdown";
@@ -520,14 +544,36 @@ export default function MarksReviewPage() {
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                    <button 
-                        onClick={handleCalculate}
-                        disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
-                    >
-                        {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={15} /> : <Trophy size={15} />}
-                        {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
-                    </button> 
+                    {(() => {
+                        const isCompleted = selectedProgramData?.status === 'completed';
+                        const hasApprovedMarks = (marksData?.approvedMarksCount || 0) > 0;
+                        const hasNoResults = (marksData?.resultsCount === 0);
+                        const showRecoveryButton = isCompleted && hasApprovedMarks && hasNoResults;
+
+                        if (showRecoveryButton) {
+                            return (
+                                <button
+                                    onClick={() => setShowMissingResultsConfirm(true)}
+                                    disabled={!selectedProgram || verifying}
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-orange-600 to-red-500 hover:from-orange-500 hover:to-red-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
+                                >
+                                    <Trophy size={15} />
+                                    {verifying ? 'Calculating...' : 'Calculate Missing Results'}
+                                </button>
+                            );
+                        }
+
+                        return (
+                            <button
+                                onClick={handleCalculate}
+                                disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
+                            >
+                                {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={15} /> : <Trophy size={15} />}
+                                {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
+                            </button>
+                        );
+                    })()}
 
                     <button
                         onClick={() => refreshMarks()}
@@ -1087,6 +1133,17 @@ export default function MarksReviewPage() {
           variant="warning"
           onConfirm={confirmCalculateScores}
           onCancel={() => setShowCalculateConfirm(false)}
+        />
+        <ConfirmModal
+          isOpen={showMissingResultsConfirm}
+          title="Calculate Missing Results"
+          message="This program is marked as completed, but no calculated results exist. Calculate the missing results from the approved marks?"
+          confirmText="Calculate Missing Results"
+          cancelText="Cancel"
+          variant="warning"
+          isLoading={verifying}
+          onConfirm={confirmCalculateMissingScores}
+          onCancel={() => setShowMissingResultsConfirm(false)}
         />
         <ConfirmModal
           isOpen={showApproveAllConfirm}

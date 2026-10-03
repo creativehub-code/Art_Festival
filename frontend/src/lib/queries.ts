@@ -323,6 +323,8 @@ export interface ReviewProgramMarksResponse {
   page: number;
   limit: number;
   totalPages: number;
+  approvedMarksCount?: number;
+  resultsCount?: number;
 }
 
 export const useReviewProgramMarks = (
@@ -335,7 +337,7 @@ export const useReviewProgramMarks = (
     queryKey: ['reviewProgramMarks', programId, page, limit, search],
     queryFn: async () => {
       if (!programId) {
-        return { marks: [], assignedJudges: [], total: 0, page: 1, limit: 50, totalPages: 0 };
+        return { marks: [], assignedJudges: [], total: 0, page: 1, limit: 50, totalPages: 0, approvedMarksCount: 0, resultsCount: 0 };
       }
       const params = new URLSearchParams({
         page: String(page),

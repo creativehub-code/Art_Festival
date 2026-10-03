@@ -795,8 +795,6 @@ const calculateScores = async (req, res) => {
       return res.status(400).json({ message: "No marks found for this program to verify." });
     }
     sendError(res, 500, "Failed to calculate scores", error);
-  } finally {
-    await session.endSession();
   }
 };
 
@@ -1460,6 +1458,9 @@ const getReviewProgramDetail = async (req, res) => {
       }
     });
 
+    const approvedMarksCount = await JudgeMark.countDocuments({ programId, status: 'approved' });
+    const resultsCount = await ProgramResult.countDocuments({ programId });
+
     res.json({
       marks,
       assignedJudges: Object.values(assignedJudgesMap),
@@ -1467,6 +1468,8 @@ const getReviewProgramDetail = async (req, res) => {
       page,
       limit,
       totalPages,
+      approvedMarksCount,
+      resultsCount,
     });
   } catch (error) {
     sendError(res, 500, 'Failed to retrieve review program detail', error);
