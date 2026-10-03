@@ -1378,6 +1378,7 @@ const getReviewPrograms = async (req, res) => {
         groupId: p.groupId,
         isConversation: p.isConversation,
         maxMarks: p.maxMarks,
+        positionCount: p.positionCount,
         criteria: p.criteria || [],
         criteriaEnabled: p.criteriaEnabled,
         participantCount: participantCountMap[pidStr] || 0,
