@@ -10,6 +10,7 @@ const {
   streamMarks,
   getAllExportData,
   updateMarkStatus,
+  approveAllProgramMarks,
   editApprovedMark,
   getReviewPrograms,
   getReviewProgramDetail,
@@ -26,6 +27,8 @@ router.get("/review/program/:programId", protect, restrictTo("admin"), getReview
 
 // SSE stream route MUST be declared before /:programId to avoid route conflict
 router.get("/stream/:programId", protect, restrictTo("admin"), streamMarks);
+// Bulk approve-all endpoint — declared before /:programId to avoid route shadowing
+router.post("/approve-all/:programId", protect, restrictTo("admin"), approveAllProgramMarks);
 router.get("/:programId", protect, restrictTo("admin", "judge"), getMarksByProgram);
 router.post("/calculate/:programId", protect, restrictTo("admin"), calculateScores);
 router.post("/export-sheets/:programId", protect, restrictTo("admin"), exportToGoogleSheets);

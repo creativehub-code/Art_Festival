@@ -1047,6 +1047,102 @@ const getAllExportData = async (req, res) => {
   }
 };
 
+// @desc    Approve All Pending Marks for a Program (Admin bulk action)
+// @route   POST /api/marks/approve-all/:programId
+// @access  Admin
+const approveAllProgramMarks = async (req, res) => {
+  const { programId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(programId)) {
+    return res.status(400).json({ message: "Invalid programId." });
+  }
+
+  try {
+    let approvedCount = 0;
+
+    await withRetryTransaction("approveAllProgramMarks", async (session) => {
+      // 1. Validate the program exists and belongs to this system
+      const program = await Program.findById(programId).select("_id name isConversation").session(session);
+      if (!program) {
+        throw new Error("PROGRAM_NOT_FOUND");
+      }
+
+      // 2. Find all currently pending marks for this program
+      const pendingMarks = await JudgeMark.find({
+        programId,
+        status: "pending",
+      }).session(session);
+
+      if (pendingMarks.length === 0) {
+        // Nothing to do — return cleanly
+        return;
+      }
+
+      // 3. Approve each pending mark and handle ConversationPair mirroring
+      //    (same logic as individual updateMarkStatus, batched for efficiency)
+      const pendingMarkIds = pendingMarks.map((m) => m._id);
+
+      // Bulk-approve all pending marks for this program in one updateMany call
+      await JudgeMark.updateMany(
+        { _id: { $in: pendingMarkIds } },
+        { $set: { status: "approved", submitted: true } },
+        { session }
+      );
+
+      approvedCount = pendingMarks.length;
+
+      // 4. ConversationPair mirroring: for each approved mark,
+      //    mirror the approval to all other conversation pair members.
+      //    This replicates the per-mark logic in updateMarkStatus.
+      if (program.isConversation) {
+        // Collect unique (judgeId, participantId) combos from approved marks
+        for (const mark of pendingMarks) {
+          const group = await ConversationPair.findOne({
+            programId,
+            participants: mark.participantId,
+          }).session(session);
+
+          if (group && group.participants && group.participants.length > 1) {
+            const otherMemberIds = group.participants.filter(
+              (pId) => pId.toString() !== mark.participantId.toString()
+            );
+
+            if (otherMemberIds.length > 0) {
+              await JudgeMark.updateMany(
+                {
+                  judgeId: mark.judgeId,
+                  programId,
+                  participantId: { $in: otherMemberIds },
+                },
+                { $set: { status: "approved", submitted: true } },
+                { session }
+              );
+            }
+          }
+        }
+      }
+
+      // 5. Recalculate program scores once after all approvals — same as individual approve.
+      //    recalculateProgramScoresInternal is idempotent: safe to call once for the batch.
+      await recalculateProgramScoresInternal(programId, session);
+    });
+
+    res.json({
+      success: true,
+      approvedCount,
+      message:
+        approvedCount > 0
+          ? `Successfully approved ${approvedCount} pending mark(s).`
+          : "No pending marks found to approve.",
+    });
+  } catch (error) {
+    if (error.message === "PROGRAM_NOT_FOUND") {
+      return res.status(404).json({ message: "Program not found." });
+    }
+    sendError(res, 500, "Error approving all marks", error);
+  }
+};
+
 // @desc    Update Mark Status (Approve/Reject)
 // @route   PATCH /api/marks/:id/status
 // @access  Admin
@@ -1387,6 +1483,7 @@ module.exports = {
   streamMarks,
   getAllExportData,
   updateMarkStatus,
+  approveAllProgramMarks,
   editApprovedMark,
   getReviewPrograms,
   getReviewProgramDetail,

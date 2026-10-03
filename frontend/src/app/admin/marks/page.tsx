@@ -23,6 +23,8 @@ export default function MarksReviewPage() {
   const [verifiedPrograms, setVerifiedPrograms] = useState<Set<string>>(new Set());
   const [verifyResults, setVerifyResults] = useState<any[] | null>(null); // position results after verify
   const [showCalculateConfirm, setShowCalculateConfirm] = useState(false);
+  const [showApproveAllConfirm, setShowApproveAllConfirm] = useState(false);
+  const [isApprovingAll, setIsApprovingAll] = useState(false);
 
   
   // SSE connection ref — used to abort the stream on cleanup/program-change
@@ -97,6 +99,31 @@ export default function MarksReviewPage() {
       }
   };
 
+  // Approve All handler — calls the bulk endpoint; reuses identical cache-invalidation as handleMarkAction
+  const handleApproveAll = async () => {
+    if (!selectedProgram) return;
+    setIsApprovingAll(true);
+    setShowApproveAllConfirm(false);
+    try {
+      const result = await apiRequest(`/marks/approve-all/${selectedProgram}`, 'POST');
+      addToast({
+        title: 'Approve All',
+        message: result.message || 'All pending marks approved.',
+        type: 'success',
+      });
+      // Invalidate same keys as individual handleMarkAction
+      invalidateReviewProgramMarks(selectedProgram);
+      invalidateReviewPrograms();
+      invalidateIndividualRankings();
+      invalidateParticipants();
+      invalidateTeams();
+    } catch (e: any) {
+      addToast({ title: 'Approve All Failed', message: e.message, type: 'error' });
+    } finally {
+      setIsApprovingAll(false);
+    }
+  };
+
   // TanStack Query Hooks replacing local state
   const { data: serverSettings = DEFAULT_SETTINGS } = useSettings();
   const [settings, setSettings] = React.useState(serverSettings);
@@ -110,6 +137,8 @@ export default function MarksReviewPage() {
   const { data: conversationPairs = [] as any[] } = useConversationPairs(selectedProgram, !!selectedProgramData?.isConversation);
   
   const marks = marksData?.marks || [];
+  // Count of pending marks across all participants for the selected program (from raw server data)
+  const pendingMarksCount = marks.filter((m: any) => m.status === 'pending').length;
   
   const assignedJudges = useMemo(() => {
       if (marksData?.assignedJudges && marksData.assignedJudges.length > 0) {
@@ -529,7 +558,24 @@ export default function MarksReviewPage() {
                         {isSyncing ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
                         <span>Google Export</span>
                     </button>
+
+                    {/* Approve All button — only shown in detail view; disabled when no pending marks */}
+                    <button
+                        id="approve-all-btn"
+                        onClick={() => setShowApproveAllConfirm(true)}
+                        disabled={pendingMarksCount === 0 || isApprovingAll || marksLoading}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
+                        title={pendingMarksCount === 0 ? "No pending marks to approve" : `Approve all ${pendingMarksCount} pending mark(s)`}
+                    >
+                        {isApprovingAll ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <CheckCircle size={14} />
+                        )}
+                        <span>{isApprovingAll ? 'Approving...' : 'Approve All'}</span>
+                    </button>
                 </div>
+
             </div>
         )}
 
@@ -1042,7 +1088,19 @@ export default function MarksReviewPage() {
           onConfirm={confirmCalculateScores}
           onCancel={() => setShowCalculateConfirm(false)}
         />
+        <ConfirmModal
+          isOpen={showApproveAllConfirm}
+          title="Approve All Pending Marks"
+          message={`Approve all ${pendingMarksCount} pending judge mark(s) for this program? Already-approved and rejected marks will not be changed.`}
+          confirmText="Approve All"
+          cancelText="Cancel"
+          variant="info"
+          isLoading={isApprovingAll}
+          onConfirm={handleApproveAll}
+          onCancel={() => setShowApproveAllConfirm(false)}
+        />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       
       {activeMarkDetail && (
         <MarkDetailModal
