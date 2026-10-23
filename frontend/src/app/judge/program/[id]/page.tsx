@@ -24,6 +24,10 @@ export default function ProgramMarkingPage() {
   const [program, setProgram] = useState<any>(null);
   const [selectedTopicFilter, setSelectedTopicFilter] = useState<string>('ALL');
 
+  // True when this judge has already submitted marks for ALL participants in this program.
+  // Derived after data loads — participants.length > 0 ensures the page has finished loading.
+  const isFullySubmitted = participants.length > 0 && participants.every(p => lockedIds.has(p._id));
+
   useEffect(() => {
     if (!programId) return;
 
@@ -544,14 +548,26 @@ export default function ProgramMarkingPage() {
       {/* Footer Submit Action */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#1E1B2E] p-4 rounded-2xl border border-[#2D283E] shadow-md">
         <div className="text-xs text-gray-400 font-medium">
-          <span className="text-purple-400 font-bold">{stats.evaluated}</span> of <span className="text-white font-bold">{stats.total}</span> participants evaluated
+          {isFullySubmitted ? (
+            <span className="text-green-400 font-bold flex items-center gap-1.5">
+              <CheckCircle2 size={13} /> All marks submitted — read-only view
+            </span>
+          ) : (
+            <>
+              <span className="text-purple-400 font-bold">{stats.evaluated}</span> of <span className="text-white font-bold">{stats.total}</span> participants evaluated
+            </>
+          )}
         </div>
         <button
           onClick={handleSubmit}
-          disabled={isSubmitting || participants.length === 0}
-          className="bg-purple-600 hover:bg-purple-500 active:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-7 rounded-xl shadow-md shadow-purple-950/40 transition-all text-sm flex items-center gap-2 cursor-pointer"
+          disabled={isSubmitting || participants.length === 0 || isFullySubmitted}
+          className={`font-bold py-2.5 px-7 rounded-xl shadow-md transition-all text-sm flex items-center gap-2 ${
+            isFullySubmitted
+              ? 'bg-green-900/30 border border-green-500/20 text-green-400/70 cursor-not-allowed'
+              : 'bg-purple-600 hover:bg-purple-500 active:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-purple-950/40 cursor-pointer'
+          }`}
         >
-          {isSubmitting ? 'Submitting Marks...' : 'Submit Evaluation'}
+          {isSubmitting ? 'Submitting Marks...' : isFullySubmitted ? 'Evaluation Already Submitted' : 'Submit Evaluation'}
         </button>
       </div>
 

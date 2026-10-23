@@ -286,6 +286,20 @@ const submitBatchMarks = async (req, res) => {
       }
     }
 
+    // ── BACKEND GUARD: Prevent duplicate program-level submission ─────────────
+    // A judge submits marks for ALL participants in one batch. Once any mark
+    // exists for this judge + program, the entire evaluation is considered
+    // complete and no further submission is allowed — even via API bypass.
+    if (req.user.role === "judge") {
+      const existingSubmission = await JudgeMark.exists({ judgeId, programId });
+      if (existingSubmission) {
+        return res.status(409).json({
+          message: "You have already submitted marks for this program. Duplicate submission is not allowed.",
+        });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const hasCriteria = Boolean(program.criteriaEnabled && program.criteria && program.criteria.length > 0);
 
     // Deduplicate candidate marks in payload (keep latest if duplicate in array)

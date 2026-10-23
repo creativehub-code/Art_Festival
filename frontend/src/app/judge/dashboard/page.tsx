@@ -213,9 +213,8 @@ export default function JudgeDashboard() {
             return (
             <Link
               key={program._id}
-              href={isEvaluated ? "#" : "/judge/program/" + program._id}
-              onClick={(e) => { if (isEvaluated) e.preventDefault(); }}
-              className={`group relative overflow-hidden bg-[#1E1B2E] rounded-2xl border border-[#2D283E] transition-all duration-300 ${isEvaluated ? 'opacity-80 cursor-default' : 'hover:border-purple-500/50 hover:shadow-2xl hover:shadow-purple-900/20'}`}
+              href={"/judge/program/" + program._id}
+              className={`group relative overflow-hidden bg-[#1E1B2E] rounded-2xl border transition-all duration-300 ${isEvaluated ? 'border-green-500/20 hover:border-green-500/40 hover:shadow-2xl hover:shadow-green-900/10' : 'border-[#2D283E] hover:border-purple-500/50 hover:shadow-2xl hover:shadow-purple-900/20'}`}
             >
               <div className="absolute inset-0 bg-gradient-to-br from-purple-900/0 group-hover:via-purple-900/10 group-hover:to-purple-900/20 transition-all duration-500" />
               <div className="relative p-6 flex flex-col h-full">
@@ -265,7 +264,12 @@ export default function JudgeDashboard() {
                 </div>
                 <div className="flex items-center justify-between pt-4 border-t border-[#2D283E] mt-auto">
                   {isEvaluated ? (
-                      <span className="text-xs text-gray-500 font-medium tracking-wide">Evaluation Completed</span>
+                      <>
+                        <span className="text-xs text-green-500/80 font-medium tracking-wide">Evaluation Completed · Tap to view</span>
+                        <div className="p-1.5 rounded-full bg-green-500/10 text-green-400 group-hover:bg-green-500/20 transition-all">
+                          <ChevronRight size={16} />
+                        </div>
+                      </>
                   ) : (
                       <>
                         <span className="text-xs text-gray-400 font-medium group-hover:text-gray-300">Tap to Evaluate</span>
