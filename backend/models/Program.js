@@ -93,6 +93,44 @@ const programSchema = new mongoose.Schema(
     customJudgeDisplayOrder: [{
       type: mongoose.Schema.Types.ObjectId,
     }],
+
+    // ── Grade System ─────────────────────────────────────────────────────────
+    // When true, grade points are calculated from the participant's percentage
+    // and added on top of the existing position points.
+    gradeSystemEnabled: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Admin-configurable grade rules. Each rule maps a percentage range to a
+    // grade name and grade point value. Ranges must not overlap.
+    gradeRules: [
+      {
+        gradeName: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        minPercentage: {
+          type: Number,
+          required: true,
+          min: 0,
+          max: 100,
+        },
+        maxPercentage: {
+          type: Number,
+          required: true,
+          min: 0,
+          max: 100,
+        },
+        gradePoints: {
+          type: Number,
+          required: true,
+          min: 0,
+        },
+      },
+    ],
+    // ─────────────────────────────────────────────────────────────────────────
   },
   {
     timestamps: true,

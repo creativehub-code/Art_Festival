@@ -1031,25 +1031,42 @@ export default function MarksReviewPage() {
                 {/* Results Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {verifyResults.map((r: any) => {
-                        const medal = r.position === 1 ? '🥇' : r.position === 2 ? '🥈' : '🥉';
+                        const medal = r.position === 1 ? '🥇' : r.position === 2 ? '🥈' : r.position === 3 ? '🥉' : '🎖️';
                         const ringColor = r.position === 1
                             ? 'border-yellow-500/40 bg-yellow-500/5'
                             : r.position === 2
                             ? 'border-gray-300/30 bg-gray-300/5'
-                            : 'border-orange-500/30 bg-orange-500/5';
-                        const textColor = r.position === 1 ? 'text-yellow-400' : r.position === 2 ? 'text-gray-300' : 'text-orange-400';
+                            : r.position === 3
+                            ? 'border-orange-500/30 bg-orange-500/5'
+                            : 'border-cyan-500/30 bg-cyan-500/5';
+                        const textColor = r.position === 1 ? 'text-yellow-400' : r.position === 2 ? 'text-gray-300' : r.position === 3 ? 'text-orange-400' : 'text-cyan-400';
+                        
+                        const totalAwardPoints = (r.positionPoints || 0) + (r.gradePoints || 0);
+                        const pName = r.participantId?.name || (r.participantIds && r.participantIds.map((p: any) => p.name).join(' & ')) || '—';
+                        const pChest = r.participantId?.chestNumber ? `#${r.participantId.chestNumber}` : (r.participantIds && r.participantIds.map((p: any) => `#${p.chestNumber}`).join(' & ')) || '';
+                        const pTeam = r.participantId?.teamId?.name || r.participantIds?.[0]?.teamId?.name || 'No Team';
+
                         return (
                             <div key={r._id} className={`flex items-center gap-4 p-4 rounded-xl border ${ringColor}`}>
                                 <span className="text-3xl">{medal}</span>
-                                <div className="min-w-0">
-                                    <p className="font-bold text-white truncate">{r.participantId?.name || '—'}</p>
-                                    <p className="text-xs text-gray-500 truncate">
-                                        #{r.participantId?.chestNumber} · {r.participantId?.teamId?.name || 'No Team'}
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-bold text-white truncate">{pName}</p>
+                                        {r.grade && (
+                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
+                                                Grade {r.grade} {r.percentage != null ? `(${r.percentage}%)` : ''}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                                        {pChest ? `${pChest} · ` : ''}{pTeam}
                                     </p>
                                 </div>
                                 <div className="ml-auto shrink-0 text-right">
-                                    <p className={`text-xl font-black font-mono ${textColor}`}>+{r.positionPoints}</p>
-                                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">pts</p>
+                                    <p className={`text-xl font-black font-mono ${textColor}`}>+{totalAwardPoints}</p>
+                                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">
+                                        {r.gradePoints > 0 ? `(Pos: ${r.positionPoints} + Gr: ${r.gradePoints})` : 'pts'}
+                                    </p>
                                 </div>
                             </div>
                         );

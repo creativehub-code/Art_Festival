@@ -23,6 +23,8 @@ interface ParticipantResult {
   chestNumber: string;
   teamName: string;
   totalScore: number;
+  grade?: string | null;
+  percentage?: number | null;
 }
 
 export default function PublicViewer() {
@@ -48,13 +50,16 @@ export default function PublicViewer() {
 
           // Map the ProgramResult schema to our ParticipantResult interface
           const mappedResults: ParticipantResult[] = resultsData.flatMap((res: any) => {
+            const combinedScore = (res.positionPoints || 0) + (res.gradePoints || 0);
             if (res.participantIds && res.participantIds.length > 0) {
               return res.participantIds.map((p: any) => ({
                 participantId: p._id || 'N/A',
                 name: p.name || 'N/A',
                 chestNumber: p.chestNumber || 'N/A',
                 teamName: res.teamId?.name || p.teamId?.name || 'No Team',
-                totalScore: res.positionPoints || 0
+                totalScore: combinedScore,
+                grade: res.grade || null,
+                percentage: res.percentage ?? null,
               }));
             }
             return [{
@@ -62,7 +67,9 @@ export default function PublicViewer() {
               name: res.participantId?.name || 'N/A',
               chestNumber: res.participantId?.chestNumber || 'N/A',
               teamName: res.teamId?.name || 'No Team',
-              totalScore: res.positionPoints || 0
+              totalScore: combinedScore,
+              grade: res.grade || null,
+              percentage: res.percentage ?? null,
             }];
           });
 
@@ -200,44 +207,18 @@ export default function PublicViewer() {
                 {latestResult.results.map((result, index) => (
                   <div key={result.participantId} className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl border-l-4 border-l-pink-500/50 hover:bg-gray-800 transition-all">
                     <div className="flex items-center gap-3">
-                         <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-gray-700 text-gray-300`}>
+                      <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-gray-700 text-gray-300`}>
                         {index + 1}
                       </div>
                       <div>
-                        <p className="font-bold text-lg">{result.name}</p>
-                        <p className="text-xs text-gray-400">{result.teamName} • Chest #{result.chestNumber}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                       <p className="font-bold text-xl text-pink-300">{result.totalScore} pts</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-                <div className="text-gray-500 text-center py-10">No results published yet.</div>
-            )}
-          </section>
-
-          {/* Last Published Program Result */}
-          <section className="bg-gray-900/40 p-6 rounded-2xl border border-gray-800 shadow-2xl backdrop-blur-sm">
-             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
-              <span className="text-pink-400 text-3xl">📢</span> Result: {latestResult?.programName || 'Waiting...'}
-            </h2>
-            {loading ? (
-               <div className="animate-pulse space-y-4">
-                {[1,2,3].map(i => <div key={i} className="h-12 bg-gray-800 rounded"></div>)}
-              </div>
-            ) : latestResult ? (
-              <div className="space-y-4">
-                {latestResult.results.map((result, index) => (
-                  <div key={result.participantId} className="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl border-l-4 border-l-pink-500/50 hover:bg-gray-800 transition-all">
-                    <div className="flex items-center gap-3">
-                         <div className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold bg-gray-700 text-gray-300`}>
-                        {index + 1}
-                      </div>
-                      <div>
-                        <p className="font-bold text-lg">{result.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-lg">{result.name}</p>
+                          {result.grade && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                              Grade {result.grade}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-400">{result.teamName} • Chest #{result.chestNumber}</p>
                       </div>
                     </div>

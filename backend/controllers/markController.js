@@ -588,8 +588,12 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     pairs = await pairsQuery;
   }
 
-  // 3. Aggregate marks for each participant or conversation pair unit in THIS program
-  const programScores = {};
+  // 3. Aggregate marks for each participant or conversation pair unit in THIS program.
+  //    Also track per-participant judge count so we can compute max possible marks
+  //    for the percentage calculation (totalMarks / (judgeCount * maxMarksPerJudge) * 100).
+  const programScores = {};       // { participantId: totalMarksObtained }
+  const programJudgeCounts = {};  // { participantId: Set<judgeId> }
+
   if (program.isConversation && pairs.length > 0) {
     const pIdToPrimary = {};
     pairs.forEach(pair => {
@@ -606,6 +610,8 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
       const primId = pIdToPrimary[rawPId] || rawPId;
       const key = `${jId}_${primId}`;
       judgePairScores[key] = mark.marksGiven || 0;
+      if (!programJudgeCounts[primId]) programJudgeCounts[primId] = new Set();
+      programJudgeCounts[primId].add(jId);
     });
 
     Object.entries(judgePairScores).forEach(([key, score]) => {
@@ -615,8 +621,11 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
   } else {
     marks.forEach((mark) => {
       const pId = mark.participantId.toString();
+      const jId = mark.judgeId.toString();
       if (!programScores[pId]) programScores[pId] = 0;
       programScores[pId] += mark.marksGiven || 0;
+      if (!programJudgeCounts[pId]) programJudgeCounts[pId] = new Set();
+      programJudgeCounts[pId].add(jId);
     });
   }
 
@@ -637,8 +646,8 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     };
   }
 
-  // 6. Assign Positions and Points (Handling exact ties with Dense Ranking)
-  const positionAwards = [];
+  // 6. Assign Positions, Points, and Grade Data (Handling exact ties with Dense Ranking)
+  const awards = [];
   let currentPosition = 1;
   let rankPoints = settings.firstPlacePoints;
 
@@ -659,12 +668,40 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     else if (currentPosition === 3 && positionCount >= 3) rankPoints = settings.thirdPlacePoints;
     else rankPoints = 0;
 
-    if (rankPoints > 0) {
-      positionAwards.push({
+    // Grade calculation (only when gradeSystemEnabled)
+    let percentage = null;
+    let grade = null;
+    let gradePoints = 0;
+
+    if (program.gradeSystemEnabled && program.gradeRules && program.gradeRules.length > 0) {
+      const maxMarksPerJudge = program.maxMarks || 100;
+      const judgeCount = programJudgeCounts[pId] ? programJudgeCounts[pId].size : 0;
+      const totalMaxPossible = judgeCount * maxMarksPerJudge;
+
+      if (totalMaxPossible > 0) {
+        percentage = parseFloat(((currentScore / totalMaxPossible) * 100).toFixed(4));
+        const rule = program.gradeRules.find(r => percentage >= r.minPercentage && percentage <= r.maxPercentage);
+        if (rule) {
+          grade = rule.gradeName;
+          gradePoints = rule.gradePoints || 0;
+        }
+      }
+    }
+
+    // Award if participant earned position points OR (if grade system enabled) earned grade points or a grade
+    const shouldAward = program.gradeSystemEnabled
+      ? (rankPoints > 0 || gradePoints > 0 || grade !== null)
+      : (rankPoints > 0);
+
+    if (shouldAward) {
+      awards.push({
         programId,
         participantId: pId,
         position: currentPosition,
         positionPoints: rankPoints,
+        percentage,
+        grade,
+        gradePoints,
       });
     }
   }
@@ -673,7 +710,7 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
   if (session) partsQuery.session(session);
   const participantDocs = await partsQuery;
 
-  const enrichedAwards = positionAwards.map(award => {
+  const enrichedAwards = awards.map(award => {
     let participantIds = [award.participantId];
     let teamId = null;
 
@@ -694,7 +731,7 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
       ...award,
       participantIds,
       teamId,
-      isConversation: program.isConversation
+      isConversation: program.isConversation,
     };
   });
 
@@ -733,14 +770,15 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     if (session) resQuery.session(session);
     const allResults = await resQuery;
 
-    const totalPositionScore = allResults.reduce(
-      (sum, r) => sum + (r.positionPoints || 0),
+    // Total score = sum of (positionPoints + gradePoints) across all program results
+    const totalCombinedScore = allResults.reduce(
+      (sum, r) => sum + (r.positionPoints || 0) + (r.gradePoints || 0),
       0,
     );
 
     const updatePartQuery = Participant.findByIdAndUpdate(
       partId,
-      { totalScore: totalPositionScore },
+      { totalScore: totalCombinedScore },
       { new: true, ...(session ? { session } : {}) }
     );
     const updatedParticipant = await updatePartQuery;
@@ -757,8 +795,9 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
     if (session) teamResQuery.session(session);
     const teamResults = await teamResQuery;
 
+    // Team score = sum of (positionPoints + gradePoints) across all results for this team
     const teamTotalScore = teamResults.reduce(
-      (sum, r) => sum + (r.positionPoints || 0),
+      (sum, r) => sum + (r.positionPoints || 0) + (r.gradePoints || 0),
       0,
     );
 
@@ -790,6 +829,7 @@ const calculateScores = async (req, res) => {
       // Populate position awards for frontend
       const populatedResults = await ProgramResult.find({ programId })
         .populate({ path: "participantIds", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
+        .populate({ path: "participantId", select: "name chestNumber teamId", populate: { path: "teamId", select: "name" } })
         .sort({ position: 1 })
         .session(session);
 
@@ -963,7 +1003,15 @@ const getPublicResults = async (req, res) => {
           select: "name",
         },
       })
-      .select("position positionPoints participantIds isConversation")
+      .populate({
+        path: "participantId",
+        select: "name chestNumber teamId",
+        populate: {
+          path: "teamId",
+          select: "name",
+        },
+      })
+      .select("position positionPoints percentage grade gradePoints participantId participantIds isConversation")
       .sort({ position: 1 });
 
     res.json(results);

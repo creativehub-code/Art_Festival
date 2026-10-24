@@ -32,6 +32,20 @@ const programResultSchema = new mongoose.Schema(
       type: Number, // Points awarded for this position
       required: true,
     },
+    // ── Grade System Fields (null when gradeSystemEnabled is false on the program) ──
+    percentage: {
+      type: Number,   // e.g. 80.00
+      default: null,
+    },
+    grade: {
+      type: String,   // e.g. "A"
+      default: null,
+    },
+    gradePoints: {
+      type: Number,   // Points awarded for this grade, 0 when system not enabled
+      default: 0,
+    },
+    // ─────────────────────────────────────────────────────────────────────
   },
   {
     timestamps: true,

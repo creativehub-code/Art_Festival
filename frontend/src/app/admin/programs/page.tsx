@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown, Trophy } from 'lucide-react';
+import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown, Trophy, Percent } from 'lucide-react';
 import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants, useConversationPairs, useUpdateDisplayOrder } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -1049,6 +1049,145 @@ function CriteriaFormSection({
 }
 
 // ---------------------------------------------------------------------------
+// Grade System Form Section
+// ---------------------------------------------------------------------------
+type GradeRule = { gradeName: string; minPercentage: string | number; maxPercentage: string | number; gradePoints: string | number };
+
+function GradeSystemFormSection({
+    gradeSystemEnabled,
+    gradeRules,
+    onChangeEnabled,
+    onChangeRules,
+}: {
+    gradeSystemEnabled: boolean;
+    gradeRules: GradeRule[];
+    onChangeEnabled: (val: boolean) => void;
+    onChangeRules: (rules: GradeRule[]) => void;
+}) {
+    const handleAdd = () => {
+        onChangeRules([...gradeRules, { gradeName: '', minPercentage: '', maxPercentage: '', gradePoints: '' }]);
+    };
+
+    const handleRemove = (index: number) => {
+        onChangeRules(gradeRules.filter((_, i) => i !== index));
+    };
+
+    const handleUpdate = (index: number, field: keyof GradeRule, val: any) => {
+        const next = [...gradeRules];
+        next[index] = { ...next[index], [field]: val };
+        onChangeRules(next);
+    };
+
+    return (
+        <div className="p-4 rounded-2xl bg-[#0E1420] border border-[#1E2A3A] space-y-4 text-left">
+            <div className="flex items-center justify-between gap-4">
+                <div>
+                    <p className="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-2">
+                        <Percent size={14} className="text-cyan-400" /> Grade Point System
+                    </p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                        {gradeSystemEnabled
+                            ? 'ON — Grade points awarded based on percentage achieved.'
+                            : 'OFF — Only position points are awarded.'}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => onChangeEnabled(!gradeSystemEnabled)}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border shrink-0 ${
+                        gradeSystemEnabled
+                            ? 'bg-cyan-600 text-white border-cyan-500 shadow-md shadow-cyan-900/30'
+                            : 'bg-[#191526] text-gray-400 border-gray-700 hover:border-gray-600'
+                    }`}
+                >
+                    {gradeSystemEnabled ? 'ON' : 'OFF'}
+                </button>
+            </div>
+
+            {gradeSystemEnabled && (
+                <div className="space-y-3 pt-3 border-t border-[#1A2030]">
+                    {/* Column headers */}
+                    <div className="grid grid-cols-12 gap-2 px-1">
+                        <div className="col-span-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Grade</div>
+                        <div className="col-span-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Min %</div>
+                        <div className="col-span-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Max %</div>
+                        <div className="col-span-2 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Points</div>
+                        <div className="col-span-1" />
+                    </div>
+
+                    {gradeRules.map((rule, idx) => (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-[#141E2E] p-2 rounded-xl border border-[#1E2A3A]">
+                            <input
+                                type="text"
+                                placeholder="e.g. A+"
+                                value={rule.gradeName}
+                                onChange={(e) => handleUpdate(idx, 'gradeName', e.target.value)}
+                                className="col-span-3 px-2 py-1.5 rounded-lg bg-[#0E1420] border border-[#2D283E] text-white text-xs outline-none focus:border-cyan-500"
+                            />
+                            <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                placeholder="0"
+                                value={rule.minPercentage}
+                                onChange={(e) => handleUpdate(idx, 'minPercentage', e.target.value)}
+                                className="col-span-3 px-2 py-1.5 rounded-lg bg-[#0E1420] border border-[#2D283E] text-white text-xs font-mono outline-none focus:border-cyan-500 text-center"
+                            />
+                            <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                placeholder="100"
+                                value={rule.maxPercentage}
+                                onChange={(e) => handleUpdate(idx, 'maxPercentage', e.target.value)}
+                                className="col-span-3 px-2 py-1.5 rounded-lg bg-[#0E1420] border border-[#2D283E] text-white text-xs font-mono outline-none focus:border-cyan-500 text-center"
+                            />
+                            <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="1"
+                                value={rule.gradePoints}
+                                onChange={(e) => handleUpdate(idx, 'gradePoints', e.target.value)}
+                                className="col-span-2 px-2 py-1.5 rounded-lg bg-[#0E1420] border border-[#2D283E] text-white text-xs font-mono outline-none focus:border-cyan-500 text-center"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => handleRemove(idx)}
+                                className="col-span-1 flex items-center justify-center p-1.5 text-gray-500 hover:text-red-400 transition-colors"
+                                title="Remove Grade Rule"
+                            >
+                                <Trash2 size={13} />
+                            </button>
+                        </div>
+                    ))}
+
+                    {gradeRules.length === 0 && (
+                        <div className="text-xs text-cyan-400/80 italic p-2 bg-cyan-500/10 rounded-lg border border-cyan-500/20">
+                            No grade rules added yet. Click "+ Add Grade Rule" below.
+                        </div>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={handleAdd}
+                        className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors mt-1"
+                    >
+                        <Plus size={13} /> Add Grade Rule
+                    </button>
+
+                    <p className="text-[10px] text-gray-500 italic">
+                        Tip: Grade = A, Min = 80, Max = 89.99, Points = 4 — means 80–89.99% earns grade A worth 4 points.
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Create Program Modal
 // ---------------------------------------------------------------------------
 function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshPrograms, addToast }: { 
@@ -1073,6 +1212,8 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
         positionCount: 3,
         criteriaEnabled: false,
         criteria: [] as Array<{ title: string; maxMarks: string | number }>,
+        gradeSystemEnabled: false,
+        gradeRules: [] as GradeRule[],
     });
     const [createMultiple, setCreateMultiple] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -1100,6 +1241,8 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 positionCount: 3,
                 criteriaEnabled: false,
                 criteria: [],
+                gradeSystemEnabled: false,
+                gradeRules: [],
             }));
         }
     }, [isOpen]);
@@ -1158,13 +1301,20 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 positionCount: form.positionCount,
                 criteriaEnabled: form.criteriaEnabled,
                 criteria: form.criteriaEnabled ? form.criteria.map((c, idx) => ({ title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
+                gradeSystemEnabled: form.gradeSystemEnabled,
+                gradeRules: form.gradeSystemEnabled ? form.gradeRules.map(r => ({
+                    gradeName: String(r.gradeName).trim(),
+                    minPercentage: Number(r.minPercentage),
+                    maxPercentage: Number(r.maxPercentage),
+                    gradePoints: Number(r.gradePoints),
+                })) : [],
             };
             await apiRequest('/programs', 'POST', payload);
             refreshPrograms();
             addToast({ title: 'Success', message: 'Program created successfully!', type: 'success' });
             
             if (createMultiple) {
-                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '', criteria: [] }));
+                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '', criteria: [], gradeRules: [] }));
                 const nameInput = document.getElementById('program-name-input');
                 if (nameInput) nameInput.focus();
             } else {
@@ -1320,6 +1470,14 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                 onChangeCriteria={(newCriteria) => setForm(prev => ({ ...prev, criteria: newCriteria }))}
                             />
 
+                            {/* Grade System Configuration Section */}
+                            <GradeSystemFormSection
+                                gradeSystemEnabled={form.gradeSystemEnabled}
+                                gradeRules={form.gradeRules}
+                                onChangeEnabled={(val) => setForm(prev => ({ ...prev, gradeSystemEnabled: val }))}
+                                onChangeRules={(newRules) => setForm(prev => ({ ...prev, gradeRules: newRules }))}
+                            />
+
                             {/* Row 4: Group Program toggle + Program Order — side by side */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                 {/* Group Program toggle */}
@@ -1432,6 +1590,13 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
         positionCount: program.positionCount || 3,
         criteriaEnabled: program.criteriaEnabled || false,
         criteria: (program.criteria || []).map((c: any) => ({ _id: c._id, title: c.title, maxMarks: c.maxMarks })),
+        gradeSystemEnabled: program.gradeSystemEnabled || false,
+        gradeRules: (program.gradeRules || []).map((r: any) => ({
+            gradeName: r.gradeName || '',
+            minPercentage: r.minPercentage ?? '',
+            maxPercentage: r.maxPercentage ?? '',
+            gradePoints: r.gradePoints ?? '',
+        })),
     });
     const [loading, setLoading] = useState(false);
     const { data: dbLanguages = [] } = useLanguages();
@@ -1471,6 +1636,39 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
             }
         }
 
+        if (form.gradeSystemEnabled) {
+            if (!form.gradeRules || form.gradeRules.length === 0) {
+                addToast({ title: 'Validation Error', message: 'Please add at least one grade rule when Grade System is ON.', type: 'warning' });
+                return;
+            }
+            for (let i = 0; i < form.gradeRules.length; i++) {
+                const r = form.gradeRules[i];
+                if (!r.gradeName || !String(r.gradeName).trim()) {
+                    addToast({ title: 'Validation Error', message: `Grade rule ${i + 1} name cannot be empty.`, type: 'warning' });
+                    return;
+                }
+                const minP = Number(r.minPercentage);
+                const maxP = Number(r.maxPercentage);
+                const pts = Number(r.gradePoints);
+                if (isNaN(minP) || minP < 0 || minP > 100) {
+                    addToast({ title: 'Validation Error', message: `Grade "${r.gradeName}" min % must be between 0 and 100.`, type: 'warning' });
+                    return;
+                }
+                if (isNaN(maxP) || maxP < 0 || maxP > 100) {
+                    addToast({ title: 'Validation Error', message: `Grade "${r.gradeName}" max % must be between 0 and 100.`, type: 'warning' });
+                    return;
+                }
+                if (minP > maxP) {
+                    addToast({ title: 'Validation Error', message: `Grade "${r.gradeName}" min % cannot be greater than max %.`, type: 'warning' });
+                    return;
+                }
+                if (isNaN(pts) || pts < 0) {
+                    addToast({ title: 'Validation Error', message: `Grade "${r.gradeName}" points must be a non-negative number.`, type: 'warning' });
+                    return;
+                }
+            }
+        }
+
         setLoading(true);
         try {
             const payload: any = {
@@ -1484,6 +1682,13 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                 positionCount: form.positionCount,
                 criteriaEnabled: form.criteriaEnabled,
                 criteria: form.criteriaEnabled ? form.criteria.map((c: any, idx: number) => ({ _id: c._id, title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
+                gradeSystemEnabled: form.gradeSystemEnabled,
+                gradeRules: form.gradeSystemEnabled ? form.gradeRules.map((r: any) => ({
+                    gradeName: String(r.gradeName).trim(),
+                    minPercentage: Number(r.minPercentage),
+                    maxPercentage: Number(r.maxPercentage),
+                    gradePoints: Number(r.gradePoints),
+                })) : [],
             };
             await apiRequest(`/programs/${program._id}`, 'PATCH', payload);
             refreshPrograms();
@@ -1620,6 +1825,14 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                             criteria={form.criteria}
                             onChangeEnabled={(val) => setForm(prev => ({ ...prev, criteriaEnabled: val }))}
                             onChangeCriteria={(newCriteria) => setForm(prev => ({ ...prev, criteria: newCriteria }))}
+                        />
+
+                        {/* Grade System Configuration Section */}
+                        <GradeSystemFormSection
+                            gradeSystemEnabled={form.gradeSystemEnabled}
+                            gradeRules={form.gradeRules}
+                            onChangeEnabled={(val) => setForm(prev => ({ ...prev, gradeSystemEnabled: val }))}
+                            onChangeRules={(newRules) => setForm(prev => ({ ...prev, gradeRules: newRules }))}
                         />
 
                         {/* Group Program toggle */}

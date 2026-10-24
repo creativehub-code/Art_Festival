@@ -102,6 +102,52 @@ function validateCriteria(criteria, criteriaEnabled) {
   return { validCriteria, totalMaxMarks: total };
 }
 
+/**
+ * Validate and parse grade rules configuration.
+ * Returns cleaned gradeRules array, or throws on invalid data.
+ */
+function validateGradeRules(gradeRules, gradeSystemEnabled) {
+  if (!gradeSystemEnabled) return [];
+  if (!gradeRules || !Array.isArray(gradeRules) || gradeRules.length === 0) {
+    return [];
+  }
+  const validated = gradeRules.map((rule, idx) => {
+    const gradeName = rule.gradeName ? String(rule.gradeName).trim() : '';
+    if (!gradeName) {
+      throw new Error(`Grade rule ${idx + 1}: grade name cannot be empty.`);
+    }
+    const minPct = Number(rule.minPercentage);
+    const maxPct = Number(rule.maxPercentage);
+    const gradePoints = Number(rule.gradePoints);
+    if (isNaN(minPct) || minPct < 0 || minPct > 100) {
+      throw new Error(`Grade rule "${gradeName}": minimum percentage must be between 0 and 100.`);
+    }
+    if (isNaN(maxPct) || maxPct < 0 || maxPct > 100) {
+      throw new Error(`Grade rule "${gradeName}": maximum percentage must be between 0 and 100.`);
+    }
+    if (minPct > maxPct) {
+      throw new Error(`Grade rule "${gradeName}": minimum percentage cannot be greater than maximum percentage.`);
+    }
+    if (isNaN(gradePoints) || gradePoints < 0) {
+      throw new Error(`Grade rule "${gradeName}": grade points must be a non-negative number.`);
+    }
+    return { gradeName, minPercentage: minPct, maxPercentage: maxPct, gradePoints };
+  });
+
+  // Check for overlapping ranges
+  for (let i = 0; i < validated.length; i++) {
+    for (let j = i + 1; j < validated.length; j++) {
+      const a = validated[i];
+      const b = validated[j];
+      if (a.minPercentage <= b.maxPercentage && b.minPercentage <= a.maxPercentage) {
+        throw new Error(`Grade rules "${a.gradeName}" and "${b.gradeName}" have overlapping percentage ranges.`);
+      }
+    }
+  }
+
+  return validated;
+}
+
 // ---------------------------------------------------------------------------
 // Controllers
 // ---------------------------------------------------------------------------
@@ -179,7 +225,7 @@ const getPrograms = async (req, res) => {
 const createProgram = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount, gradeSystemEnabled, gradeRules } = req.body;
 
     // Validate positions
     let globalPosition, languagePosition;
@@ -204,6 +250,15 @@ const createProgram = async (req, res) => {
     const isCriteriaEnabled = Boolean(criteriaEnabled);
     const { validCriteria, totalMaxMarks } = validateCriteria(criteria, isCriteriaEnabled);
 
+    // Validate grade system configuration
+    const isGradeSystemEnabled = Boolean(gradeSystemEnabled);
+    let validGradeRules = [];
+    try {
+      validGradeRules = validateGradeRules(gradeRules, isGradeSystemEnabled);
+    } catch (e) {
+      return res.status(400).json({ message: e.message });
+    }
+
     const payload = {};
     if (name !== undefined)           payload.name = name;
     if (groupId !== undefined)        payload.groupId = groupId;
@@ -221,6 +276,8 @@ const createProgram = async (req, res) => {
 
     payload.criteriaEnabled = isCriteriaEnabled;
     payload.criteria = validCriteria;
+    payload.gradeSystemEnabled = isGradeSystemEnabled;
+    payload.gradeRules = validGradeRules;
 
     if (isCriteriaEnabled && totalMaxMarks !== null) {
       payload.maxMarks = totalMaxMarks;
@@ -258,7 +315,7 @@ const updateProgram = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount, gradeSystemEnabled, gradeRules } = req.body;
 
     // Validate positions
     let newGlobalPosition, newLanguagePosition;
@@ -321,6 +378,22 @@ const updateProgram = async (req, res) => {
         }
       } else if (maxMarks !== undefined) {
         updateData.maxMarks = maxMarks;
+      }
+
+      // Validate and apply grade system configuration
+      if (gradeSystemEnabled !== undefined || gradeRules !== undefined) {
+        const isGradeSystemEnabled = gradeSystemEnabled !== undefined ? Boolean(gradeSystemEnabled) : existing.gradeSystemEnabled;
+        const effectiveRules = gradeRules !== undefined ? gradeRules : (existing.gradeRules || []);
+        let validGradeRules;
+        try {
+          validGradeRules = validateGradeRules(effectiveRules, isGradeSystemEnabled);
+        } catch (e) {
+          throw new Error(e.message);
+        }
+        updateData.gradeSystemEnabled = isGradeSystemEnabled;
+        if (gradeRules !== undefined) {
+          updateData.gradeRules = validGradeRules;
+        }
       }
 
       const oldGlobalPos = existing.globalPosition;
