@@ -87,8 +87,8 @@ export default function LoginPage() {
             {/* Al Mahsan Logo */}
             <div className="mb-3 lg:mb-4 flex items-center justify-center">
               <img
-                src="/al-mahsan-logo.png"
-                alt="Al Mahsan Logo"
+                src="/thanafus-logo.png"
+                alt="Thanafus Logo"
                 className="w-36 h-36 md:w-44 md:h-44 lg:w-72 lg:h-72 object-contain drop-shadow-[0_12px_32px_rgba(168,85,247,0.30)]"
               />
             </div>
@@ -97,7 +97,7 @@ export default function LoginPage() {
             <div className="space-y-1.5">
               <p className="text-purple-300/60 text-xs font-semibold uppercase tracking-[0.2em]">Welcome to</p>
               <h1 className="text-2xl lg:text-3xl font-bold text-white tracking-tight leading-tight">
-                Al Mahsan
+                Thanafus
               </h1>
               <p className="text-purple-200/50 text-sm lg:text-base font-medium">
                 Art Festival Competition
