@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { apiRequest } from '@/lib/api';
-import { Award, Calendar, BarChart3, TrendingUp, Activity, Users, Trophy, Star, ChevronRight, BarChart, ArrowRight, UserCheck, Layers, ChevronLeft, CalendarDays, CheckSquare, MapPin, Search, Bell, Trash2 } from 'lucide-react';
+import { Award, Calendar, BarChart3, TrendingUp, Activity, Users, Trophy, Star, ChevronRight, BarChart, ArrowRight, UserCheck, Layers, ChevronLeft, ChevronDown, CalendarDays, CheckSquare, MapPin, Search, Bell, Trash2 } from 'lucide-react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,7 +16,7 @@ import {
   ArcElement
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { usePrograms, useTeams, useGroupCount, useParticipants, useInvalidate, useLanguages } from '@/lib/queries';
+import { usePrograms, useTeams, useGroupCount, useParticipants, useInvalidate, useLanguages, useStages } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import { useToast } from '@/lib/useToast';
 
@@ -44,10 +44,12 @@ export default function AdminDashboard() {
   const participantCount = participantsRes?.total ?? 0;
   
   const [selectedLanguage, setSelectedLanguage] = useState('All');
+  const [selectedStage, setSelectedStage] = useState('All');
   const [isProgramsVisible, setIsProgramsVisible] = useState(true);
 
   const { data: dbLanguages = [] } = useLanguages();
   const languages = ['All', ...dbLanguages.map(l => l.name)];
+  const { data: stages = [] } = useStages();
 
   const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {
@@ -63,9 +65,27 @@ export default function AdminDashboard() {
   const filteredActivePrograms = [...activePrograms]
     .filter((p: any) => {
       const matchesLanguage = selectedLanguage === 'All' || (p.language || 'English') === selectedLanguage;
-      return matchesLanguage;
+      const progStageId = typeof p.stageId === 'object' && p.stageId !== null ? p.stageId._id : p.stageId;
+      const matchesStage =
+        selectedStage === 'All'
+          ? true
+          : selectedStage === 'unassigned'
+          ? !progStageId
+          : String(progStageId || '') === String(selectedStage);
+      return matchesLanguage && matchesStage;
     })
     .sort((a: any, b: any) => {
+      if (selectedStage !== 'All' && selectedStage !== 'unassigned') {
+        const aPos = a.stagePosition;
+        const bPos = b.stagePosition;
+        if (aPos !== null && aPos !== undefined && bPos !== null && bPos !== undefined) {
+          return aPos - bPos;
+        }
+        if (aPos !== null && aPos !== undefined) return -1;
+        if (bPos !== null && bPos !== undefined) return 1;
+        return a.name.localeCompare(b.name);
+      }
+
       if (selectedLanguage === 'All') {
         const aPos = a.globalPosition;
         const bPos = b.globalPosition;
@@ -445,11 +465,41 @@ export default function AdminDashboard() {
                 Active Programs
               </h2>
               <span className="px-2.5 py-0.5 rounded-md bg-[#1E1B2E] text-purple-300 text-xs font-bold border border-[#2D283E]">
-                {activePrograms.length}
+                {filteredActivePrograms.length}
               </span>
             </div>
             
-            <div className="w-full sm:w-auto max-w-full">
+            <div className="flex items-center gap-3 flex-wrap w-full sm:w-auto max-w-full justify-start sm:justify-end">
+                {/* Stage Filter */}
+                <div className="bg-[#1E1B2E] p-1 rounded-xl border border-[#2D283E] flex items-center">
+                  <span className="text-xs font-bold text-gray-400 pl-3 pr-1.5 shrink-0">Stage:</span>
+                  <div className="relative flex items-center">
+                    <select
+                      value={selectedStage}
+                      onChange={(e) => setSelectedStage(e.target.value)}
+                      className={`px-3 py-1.5 pr-7 rounded-lg text-xs font-bold transition-all outline-none cursor-pointer appearance-none ${
+                        selectedStage !== 'All'
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'bg-transparent text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <option value="All" className="bg-[#1E1B2E] text-white">All Stages</option>
+                      {stages.map((s: any) => (
+                        <option key={s._id} value={s._id} className="bg-[#1E1B2E] text-white">
+                          {s.name}
+                        </option>
+                      ))}
+                      <option value="unassigned" className="bg-[#1E1B2E] text-white">No Stage</option>
+                    </select>
+                    <ChevronDown
+                      size={13}
+                      className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 transition-colors ${
+                        selectedStage !== 'All' ? 'text-white' : 'text-gray-400'
+                      }`}
+                    />
+                  </div>
+                </div>
+
                 <div className="bg-[#1E1B2E] p-1 rounded-xl border border-[#2D283E] flex w-full sm:w-auto overflow-x-auto max-w-full flex-nowrap custom-scrollbar no-scrollbar">
                     {languages.map(lang => (
                         <button
@@ -539,6 +589,11 @@ function ProgramCards({ programs, onStatusUpdate }: { programs: any[], onStatusU
                   {program.languagePosition != null && (
                     <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 text-xs font-bold border border-amber-500/20 whitespace-nowrap">
                       #{(program.language || 'English').substring(0, 2)}{program.languagePosition}
+                    </span>
+                  )}
+                  {program.stageId && (
+                    <span className="px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-300 text-xs font-bold border border-purple-500/20 whitespace-nowrap">
+                      {(typeof program.stageId === 'object' ? program.stageId.name : 'Stage')}{program.stagePosition != null ? ` · #${program.stagePosition}` : ''}
                     </span>
                   )}
                 </div>

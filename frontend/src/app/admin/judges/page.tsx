@@ -516,7 +516,7 @@ export default function JudgeGroupsPage() {
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-3 mt-1">
+                                <div className="flex items-center gap-3 mt-1 flex-wrap">
                                     {p.language && (
                                         <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
                                             Language: <span className="text-gray-400">{p.language}</span>
@@ -525,6 +525,14 @@ export default function JudgeGroupsPage() {
                                     <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
                                         Group: <span className="text-purple-400">{p.groupId?.name || judgeGroups.find((g: any) => g._id === p.groupId)?.name || 'Unknown'}</span>
                                     </span>
+                                    {p.stageId && (
+                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                            Stage: <span className="text-cyan-400">{typeof p.stageId === 'object' ? p.stageId.name : 'Stage'}</span>
+                                            {p.stagePosition != null && (
+                                                <span className="text-cyan-400 ml-1">· Order: {p.stagePosition}</span>
+                                            )}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </label>
@@ -749,7 +757,7 @@ export default function JudgeGroupsPage() {
                                         </span>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-3 mt-1">
+                                <div className="flex items-center gap-3 mt-1 flex-wrap">
                                     {p.language && (
                                         <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
                                             Language: <span className="text-gray-400">{p.language}</span>
@@ -758,6 +766,14 @@ export default function JudgeGroupsPage() {
                                     <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
                                         Group: <span className="text-purple-400">{p.groupId?.name || judgeGroups.find((g: any) => g._id === p.groupId)?.name || 'Unknown'}</span>
                                     </span>
+                                    {p.stageId && (
+                                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+                                            Stage: <span className="text-cyan-400">{typeof p.stageId === 'object' ? p.stageId.name : 'Stage'}</span>
+                                            {p.stagePosition != null && (
+                                                <span className="text-cyan-400 ml-1">· Order: {p.stagePosition}</span>
+                                            )}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </label>

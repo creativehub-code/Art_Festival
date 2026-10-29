@@ -4,6 +4,7 @@ const JudgeMark = require("../models/JudgeMark");
 const JudgeGroup = require("../models/JudgeGroup");
 const Participant = require("../models/Participant");
 const Language = require("../models/Language");
+const Stage = require("../models/Stage");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,6 +65,8 @@ async function shiftLanguageDown(language, vacatedPos, excludeId = null, session
   if (excludeId) filter._id = { $ne: excludeId };
   await Program.updateMany(filter, { $inc: { languagePosition: -1 } }, { session });
 }
+
+
 
 /**
  * Validate program criteria configuration.
@@ -154,7 +157,15 @@ function validateGradeRules(gradeRules, gradeSystemEnabled) {
 
 const getPrograms = async (req, res) => {
   try {
-    const programs = await Program.find().populate("groupId");
+    const filter = {};
+    if (req.query.stageId) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.stageId)) {
+        return res.status(400).json({ message: "Invalid stage ID format." });
+      }
+      filter.stageId = req.query.stageId;
+    }
+
+    const programs = await Program.find(filter).populate("groupId").populate("stageId", "name position status");
 
     // 1. Get unique judge counts for ALL programs in ONE query
     const markStats = await JudgeMark.aggregate([
@@ -202,8 +213,15 @@ const getPrograms = async (req, res) => {
       };
     });
 
-    // 6. Sort: programs with globalPosition first (asc), then nulls by name
+    // 6. Sort: programs with stagePosition if filtered by stage, otherwise globalPosition first (asc), then nulls by name
     programsWithMarkStatus.sort((a, b) => {
+      if (req.query.stageId) {
+        const aSP = a.stagePosition;
+        const bSP = b.stagePosition;
+        if (aSP !== null && aSP !== undefined && bSP !== null && bSP !== undefined) return aSP - bSP;
+        if (aSP !== null && aSP !== undefined) return -1;
+        if (bSP !== null && bSP !== undefined) return 1;
+      }
       const aPos = a.globalPosition;
       const bPos = b.globalPosition;
       if (aPos !== null && bPos !== null) return aPos - bPos;
@@ -225,15 +243,28 @@ const getPrograms = async (req, res) => {
 const createProgram = async (req, res) => {
   const session = await mongoose.startSession();
   try {
-    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount, gradeSystemEnabled, gradeRules } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, stageId: stageIdRaw, stagePosition: spRaw, positionCount, gradeSystemEnabled, gradeRules } = req.body;
 
     // Validate positions
-    let globalPosition, languagePosition;
+    let globalPosition, languagePosition, stagePosition;
     try {
       globalPosition = parsePosition(gpRaw);
       languagePosition = parsePosition(lpRaw);
+      stagePosition = parsePosition(spRaw);
     } catch (e) {
       return res.status(400).json({ message: e.message });
+    }
+
+    // Validate stageId if provided
+    const stageId = stageIdRaw && stageIdRaw !== '' ? stageIdRaw : null;
+    if (stageId) {
+      if (!mongoose.Types.ObjectId.isValid(stageId)) {
+        return res.status(400).json({ message: "Invalid stage ID format." });
+      }
+      const stageDoc = await Stage.findById(stageId);
+      if (!stageDoc) {
+        return res.status(400).json({ message: "Selected stage does not exist." });
+      }
     }
 
     // Validate language existence
@@ -287,9 +318,25 @@ const createProgram = async (req, res) => {
 
     payload.globalPosition = globalPosition;
     payload.languagePosition = languagePosition;
+    payload.stageId = stageId;
+    payload.stagePosition = stageId ? stagePosition : null;
 
     let program;
     await session.withTransaction(async () => {
+      // Validate duplicate stagePosition within the same stage
+      if (payload.stagePosition !== null && payload.stageId) {
+        const duplicate = await Program.findOne({
+          stageId: payload.stageId,
+          stagePosition: payload.stagePosition,
+        }).session(session);
+
+        if (duplicate) {
+          const err = new Error("This order number is already used by another program in this stage. Please choose a different order number.");
+          err.status = 409;
+          throw err;
+        }
+      }
+
       // Shift global positions to make room
       if (globalPosition !== null) {
         await shiftGlobalUp(globalPosition, null, session);
@@ -298,12 +345,16 @@ const createProgram = async (req, res) => {
       if (languagePosition !== null && payload.language) {
         await shiftLanguageUp(payload.language, languagePosition, null, session);
       }
+
       const [created] = await Program.create([payload], { session });
       program = created;
     });
 
     res.status(201).json(program);
   } catch (error) {
+    if (error.status === 409) {
+      return res.status(409).json({ message: error.message });
+    }
     res.status(400).json({ message: error.message });
   } finally {
     await session.endSession();
@@ -315,15 +366,31 @@ const updateProgram = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, positionCount, gradeSystemEnabled, gradeRules } = req.body;
+    const { name, maxMarks, groupId, status, language, isConversation, topics, criteria, criteriaEnabled, globalPosition: gpRaw, languagePosition: lpRaw, stageId: stageIdRaw, stagePosition: spRaw, positionCount, gradeSystemEnabled, gradeRules } = req.body;
 
     // Validate positions
-    let newGlobalPosition, newLanguagePosition;
+    let newGlobalPosition, newLanguagePosition, newStagePosition;
     try {
       newGlobalPosition = gpRaw !== undefined ? parsePosition(gpRaw) : undefined;
       newLanguagePosition = lpRaw !== undefined ? parsePosition(lpRaw) : undefined;
+      newStagePosition = spRaw !== undefined ? parsePosition(spRaw) : undefined;
     } catch (e) {
       return res.status(400).json({ message: e.message });
+    }
+
+    // Validate stageId if provided
+    let newStageId;
+    if (stageIdRaw !== undefined) {
+      newStageId = stageIdRaw && stageIdRaw !== '' ? stageIdRaw : null;
+      if (newStageId) {
+        if (!mongoose.Types.ObjectId.isValid(newStageId)) {
+          return res.status(400).json({ message: "Invalid stage ID format." });
+        }
+        const stageDoc = await Stage.findById(newStageId);
+        if (!stageDoc) {
+          return res.status(400).json({ message: "Selected stage does not exist." });
+        }
+      }
     }
 
     // Validate language existence
@@ -466,6 +533,44 @@ const updateProgram = async (req, res) => {
         }
       }
 
+      // ---------------------------------------------------------------
+      // 3. Handle stageId and stagePosition without automatic shifting
+      // ---------------------------------------------------------------
+      const oldStageId = existing.stageId ? existing.stageId.toString() : null;
+      const effectiveStageId = newStageId !== undefined ? (newStageId ? newStageId.toString() : null) : oldStageId;
+
+      if (newStagePosition !== undefined || newStageId !== undefined) {
+        if (!effectiveStageId) {
+          // If program is moved to or has no stage, clear both stageId and stagePosition
+          updateData.stageId = null;
+          updateData.stagePosition = null;
+        } else {
+          if (newStageId !== undefined) {
+            updateData.stageId = effectiveStageId;
+          }
+          if (newStagePosition !== undefined) {
+            updateData.stagePosition = newStagePosition;
+          }
+
+          const finalStagePosition = updateData.stagePosition !== undefined ? updateData.stagePosition : existing.stagePosition;
+
+          // Validate duplicate stagePosition within the same stage
+          if (finalStagePosition !== null && finalStagePosition !== undefined) {
+            const duplicate = await Program.findOne({
+              stageId: effectiveStageId,
+              stagePosition: finalStagePosition,
+              _id: { $ne: id },
+            }).session(session);
+
+            if (duplicate) {
+              const err = new Error("This order number is already used by another program in this stage. Please choose a different order number.");
+              err.status = 409;
+              throw err;
+            }
+          }
+        }
+      }
+
       program = await Program.findByIdAndUpdate(id, updateData, {
         new: true,
         runValidators: true,
@@ -477,6 +582,9 @@ const updateProgram = async (req, res) => {
   } catch (error) {
     if (error.message === "PROGRAM_NOT_FOUND") {
       return res.status(404).json({ message: "Program not found" });
+    }
+    if (error.status === 409) {
+      return res.status(409).json({ message: error.message });
     }
     res.status(400).json({ message: error.message });
   } finally {
@@ -502,6 +610,7 @@ const deleteProgram = async (req, res) => {
       if (program.languagePosition !== null && program.language) {
         await shiftLanguageDown(program.language, program.languagePosition, null, session);
       }
+
 
       const ProgramResult = require("../models/ProgramResult");
       const ConversationPair = require("../models/ConversationPair");
@@ -553,7 +662,8 @@ const deleteProgram = async (req, res) => {
 const getPublicPrograms = async (req, res) => {
   try {
     const programs = await Program.find({ status: "completed" })
-      .select("name language updatedAt globalPosition")
+      .select("name language updatedAt globalPosition stageId stagePosition")
+      .populate("stageId", "name position")
       .sort({ globalPosition: 1, updatedAt: -1 });
     res.json(programs);
   } catch (error) {

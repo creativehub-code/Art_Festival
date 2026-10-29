@@ -47,11 +47,9 @@ export default function JudgeDashboard() {
 
         setJudgeCategory(category);
 
-        // Fetch programs filtered by language
+        // Fetch programs - ONLY show programs assigned to this judge's group
         const allPrograms = await apiRequest('/programs');
-        const filtered = assignedIds.length > 0
-          ? allPrograms.filter((p: any) => assignedIds.includes(p._id))
-          : allPrograms.filter((p: any) => p.language === category);
+        const filtered = allPrograms.filter((p: any) => assignedIds.includes(p._id));
         setPrograms(filtered);
 
         // Fetch participants by the judge's language category
@@ -98,17 +96,50 @@ export default function JudgeDashboard() {
       p.name.toLowerCase().includes(searchTerm.toLowerCase())
     )
     .sort((a: any, b: any) => {
-      const aLP = a.languagePosition;
-      const bLP = b.languagePosition;
-      if (aLP !== null && aLP !== undefined && bLP !== null && bLP !== undefined) return aLP - bLP;
-      if (aLP !== null && aLP !== undefined) return -1;
-      if (bLP !== null && bLP !== undefined) return 1;
-      const aGP = a.globalPosition;
-      const bGP = b.globalPosition;
-      if (aGP !== null && aGP !== undefined && bGP !== null && bGP !== undefined) return aGP - bGP;
-      if (aGP !== null && aGP !== undefined) return -1;
-      if (bGP !== null && bGP !== undefined) return 1;
-      return a.name.localeCompare(b.name);
+      // Usable Stage ordering check: stageId object with position AND valid stagePosition
+      const aStagePos = a.stageId && typeof a.stageId === 'object' && a.stageId.position != null ? Number(a.stageId.position) : null;
+      const bStagePos = b.stageId && typeof b.stageId === 'object' && b.stageId.position != null ? Number(b.stageId.position) : null;
+      const aProgPos = a.stagePosition != null ? Number(a.stagePosition) : null;
+      const bProgPos = b.stagePosition != null ? Number(b.stagePosition) : null;
+
+      const aHasStage = aStagePos !== null && !isNaN(aStagePos) && aProgPos !== null && !isNaN(aProgPos);
+      const bHasStage = bStagePos !== null && !isNaN(bStagePos) && bProgPos !== null && !isNaN(bProgPos);
+
+      // Existing sorting logic preserved as fallback
+      const fallbackSort = () => {
+        const aLP = a.languagePosition;
+        const bLP = b.languagePosition;
+        if (aLP !== null && aLP !== undefined && bLP !== null && bLP !== undefined) return aLP - bLP;
+        if (aLP !== null && aLP !== undefined) return -1;
+        if (bLP !== null && bLP !== undefined) return 1;
+        const aGP = a.globalPosition;
+        const bGP = b.globalPosition;
+        if (aGP !== null && aGP !== undefined && bGP !== null && bGP !== undefined) return aGP - bGP;
+        if (aGP !== null && aGP !== undefined) return -1;
+        if (bGP !== null && bGP !== undefined) return 1;
+        return a.name.localeCompare(b.name);
+      };
+
+      // 1. If BOTH have Stage information and Stage Program Position:
+      // Sort by stageId.position (Stage order), then by stagePosition (Program order within that Stage)
+      if (aHasStage && bHasStage) {
+        const stageDiff = aStagePos! - bStagePos!;
+        if (stageDiff !== 0) return stageDiff;
+
+        const spDiff = aProgPos! - bProgPos!;
+        if (spDiff !== 0) return spDiff;
+
+        // If stage position and stage program position are identical, fall back to existing sorting
+        return fallbackSort();
+      }
+
+      // If one has usable Stage ordering and the other does not, staged program comes first
+      if (aHasStage) return -1;
+      if (bHasStage) return 1;
+
+      // 2. If Stage information / Stage Program Position is NOT available:
+      // Fall back to the EXISTING sorting: languagePosition -> globalPosition -> name
+      return fallbackSort();
     });
 
   const groupColor = (name: string) => {
@@ -258,6 +289,17 @@ export default function JudgeDashboard() {
                     {program.topics && program.topics.length > 0 && (
                       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/5 text-purple-400 border border-purple-500/10 text-[10px] font-bold uppercase tracking-wider">
                         <BookOpen size={10} /> {program.topics.length} {program.topics.length === 1 ? 'Topic' : 'Topics'}
+                      </span>
+                    )}
+                    {program.stageId && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-500/10 text-purple-300 border border-purple-500/20 text-[10px] font-bold uppercase tracking-wider">
+                        <Layers size={10} /> {typeof program.stageId === 'object' ? program.stageId.name : 'Stage'}
+                        {program.stagePosition != null ? ` #${program.stagePosition}` : ''}
+                      </span>
+                    )}
+                    {program.languagePosition != null && (
+                      <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-bold">
+                        #{(program.language || 'English').substring(0, 2)}{program.languagePosition}
                       </span>
                     )}
                   </div>

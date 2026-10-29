@@ -148,6 +148,7 @@ app.use("/api/participants", writeLimiter);
 app.use("/api/programs", writeLimiter);
 app.use("/api/languages", writeLimiter);
 app.use("/api/marks", writeLimiter);
+app.use("/api/stages", writeLimiter);
 
 // Routes
 app.use("/api/auth", require("./routes/authRoutes"));
@@ -155,6 +156,7 @@ app.use("/api/participants", require("./routes/participantRoutes"));
 app.use("/api/teams", require("./routes/teamRoutes"));
 app.use("/api/groups", require("./routes/groupRoutes"));
 app.use("/api/languages", require("./routes/languageRoutes"));
+app.use("/api/stages", require("./routes/stageRoutes"));
 app.use("/api/programs", require("./routes/programRoutes"));
 app.use("/api/marks", require("./routes/markRoutes"));
 app.use("/api/judges", require("./routes/judgeRoutes"));

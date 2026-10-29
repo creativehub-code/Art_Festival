@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Users, LayoutGrid, Award, Calendar, FileText, LogOut, CheckSquare, PanelLeftClose, PanelLeftOpen, BarChart3, Shield, UsersRound, Gavel, BookOpen, Plus, Menu, X } from 'lucide-react';
+import { Users, LayoutGrid, Award, Calendar, FileText, LogOut, CheckSquare, PanelLeftClose, PanelLeftOpen, BarChart3, Shield, UsersRound, Gavel, BookOpen, Plus, Menu, X, Layers } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -104,6 +104,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <NavLink href="/admin/teams" icon={<Shield size={18}/>} isSidebarOpen={isSidebarOpen}>Teams</NavLink>
             <NavLink href="/admin/groups" icon={<UsersRound size={18}/>} isSidebarOpen={isSidebarOpen}>Groups</NavLink>
             <NavLink href="/admin/programs" icon={<BookOpen size={18}/>} isSidebarOpen={isSidebarOpen}>Programs</NavLink>
+            <NavLink href="/admin/stages" icon={<Layers size={18}/>} isSidebarOpen={isSidebarOpen}>Stages</NavLink>
             <NavLink href="/admin/judges" icon={<Gavel size={18}/>} isSidebarOpen={isSidebarOpen}>Judges</NavLink>
             <NavLink href="/admin/marks" icon={<CheckSquare size={18}/>} isSidebarOpen={isSidebarOpen}>Review Marks</NavLink>
             <NavLink href="/admin/export" icon={<BarChart3 size={18}/>} isSidebarOpen={isSidebarOpen}>Individual Marks</NavLink>
@@ -176,6 +177,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 >
                   <Users size={16} className="text-purple-400" />
                   <span>Participants</span>
+                </Link>
+
+                <Link
+                  href="/admin/stages"
+                  onClick={() => setIsThreeDotMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    pathname === '/admin/stages' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'text-gray-300 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Layers size={16} className="text-pink-400" />
+                  <span>Stages</span>
                 </Link>
 
                 <div className="border-t border-white/[0.06] my-1"></div>

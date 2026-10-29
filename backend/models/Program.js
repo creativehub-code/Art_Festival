@@ -74,6 +74,19 @@ const programSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+
+    // Stage assignment: which physical stage this program runs on (null = no stage)
+    stageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Stage",
+      default: null,
+    },
+
+    // Event ordering: position within this program's assigned stage (1-based, null = unset)
+    stagePosition: {
+      type: Number,
+      default: null,
+    },
     // Number of result positions (1, 2, or 3)
     positionCount: {
       type: Number,
@@ -140,5 +153,6 @@ const programSchema = new mongoose.Schema(
 programSchema.index({ status: 1, updatedAt: -1 });
 programSchema.index({ globalPosition: 1 });
 programSchema.index({ language: 1, languagePosition: 1 });
+programSchema.index({ stageId: 1, stagePosition: 1 });
 
 module.exports = mongoose.model("Program", programSchema);

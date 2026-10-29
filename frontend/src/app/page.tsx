@@ -15,6 +15,8 @@ interface Program {
   name: string;
   status: string;
   updatedAt: string;
+  stageId?: { _id: string; name: string } | null;
+  stagePosition?: number | null;
 }
 
 interface ParticipantResult {
@@ -29,7 +31,7 @@ interface ParticipantResult {
 
 export default function PublicViewer() {
   const [teams, setTeams] = useState<Team[]>([]);
-  const [latestResult, setLatestResult] = useState<{ programName: string, results: ParticipantResult[] } | null>(null);
+  const [latestResult, setLatestResult] = useState<{ programName: string; stageName?: string; stagePosition?: number | null; results: ParticipantResult[] } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -75,8 +77,9 @@ export default function PublicViewer() {
 
           setLatestResult({
             programName: lastProgram.name,
+            stageName: lastProgram.stageId?.name,
+            stagePosition: lastProgram.stagePosition,
             results: mappedResults.slice(0, 15) // slice to 15 in case of big groups
-
           });
         } else {
           setLatestResult(null);
@@ -195,8 +198,13 @@ export default function PublicViewer() {
 
           {/* Last Published Program Result */}
           <section className="col-span-1 md:col-span-2 bg-gray-900/40 p-6 rounded-2xl border border-gray-800 shadow-2xl backdrop-blur-sm">
-             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+             <h2 className="text-2xl font-bold mb-6 flex items-center gap-2 flex-wrap">
               <span className="text-pink-400 text-3xl">📢</span> Result: {latestResult?.programName || 'Waiting...'}
+              {latestResult?.stageName && (
+                <span className="text-xs px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20 font-bold ml-2">
+                  {latestResult.stageName}{latestResult.stagePosition != null ? ` · #${latestResult.stagePosition}` : ''}
+                </span>
+              )}
             </h2>
             {loading ? (
                <div className="animate-pulse space-y-4">

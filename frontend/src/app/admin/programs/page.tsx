@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
 import { Trash2, Plus, X, Layers, Globe, FileText, CheckCircle, Users, Edit, Hash, ArrowUpDown, Trophy, Percent } from 'lucide-react';
-import { usePrograms, useGroups, useParticipants, useLanguages, useInvalidate, useProgramParticipants, useConversationPairs, useUpdateDisplayOrder } from '@/lib/queries';
+import { usePrograms, useGroups, useParticipants, useLanguages, useStages, useInvalidate, useProgramParticipants, useConversationPairs, useUpdateDisplayOrder, Stage } from '@/lib/queries';
 import ToastContainer from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useToast } from '@/lib/useToast';
@@ -11,6 +11,7 @@ import { useToast } from '@/lib/useToast';
 export default function ProgramsPage() {
   const { data: programs = [], isLoading: loadingPrograms } = usePrograms();
   const { data: groups = [] as any[] } = useGroups();
+  const { data: dbStages = [] } = useStages();
   const { invalidatePrograms } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export default function ProgramsPage() {
 
   const loading = loadingPrograms;
   const [selectedGroupFilters, setSelectedGroupFilters] = useState<Record<string, string>>({});
+  const [selectedStageFilters, setSelectedStageFilters] = useState<Record<string, string>>({});
   
   // Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -69,7 +71,7 @@ export default function ProgramsPage() {
   const { data: participantsRes } = useParticipants();
   const participants = participantsRes?.participants || [];
 
-  /** Sort programs within a language by languagePosition (nulls last), then by name */
+  /** Sort programs within a language by languagePosition (or stagePosition if stage filtered), then by name */
   const getProgramsByLanguage = (lang: string) => {
     const filtered = programs.filter((p: any) => {
       const matchesLang = (p.language || 'English') === lang;
@@ -78,10 +80,23 @@ export default function ProgramsPage() {
       const matchesGroup = filterGroupId 
         ? programGroupId === String(filterGroupId)
         : true;
-      return matchesLang && matchesGroup;
+      const filterStageId = selectedStageFilters[lang];
+      const programStageId = p.stageId?._id ? String(p.stageId._id) : (p.stageId ? String(p.stageId) : '');
+      const matchesStage = filterStageId
+        ? (filterStageId === 'unassigned' ? !programStageId : programStageId === String(filterStageId))
+        : true;
+      return matchesLang && matchesGroup && matchesStage;
     });
 
     return [...filtered].sort((a: any, b: any) => {
+      // If a specific stage filter is active, sort by stagePosition first
+      if (selectedStageFilters[lang] && selectedStageFilters[lang] !== 'unassigned') {
+        const aSP = a.stagePosition;
+        const bSP = b.stagePosition;
+        if (aSP !== null && aSP !== undefined && bSP !== null && bSP !== undefined) return aSP - bSP;
+        if (aSP !== null && aSP !== undefined) return -1;
+        if (bSP !== null && bSP !== undefined) return 1;
+      }
       const aPos = a.languagePosition;
       const bPos = b.languagePosition;
       if (aPos !== null && aPos !== undefined && bPos !== null && bPos !== undefined) return aPos - bPos;
@@ -99,13 +114,15 @@ export default function ProgramsPage() {
             <h2 className="text-2xl sm:text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-500">Manage Programs</h2>
             <p className="text-gray-400 text-xs sm:text-sm">Create, organize and track competition items.</p>
         </div>
-        <button 
-          onClick={() => openCreateModal()} 
-          className="bg-purple-600 hover:bg-purple-700 active:scale-95 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-900/30 transition-all text-sm sm:text-base border border-purple-500/30 shrink-0"
-        >
-          <Plus size={18} className="shrink-0" />
-          <span>Create Program</span>
-        </button>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <button
+            onClick={() => openCreateModal()}
+            className="bg-purple-600 hover:bg-purple-700 active:scale-95 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-900/30 transition-all text-sm sm:text-base border border-purple-500/30 shrink-0"
+          >
+            <Plus size={18} className="shrink-0" />
+            <span>Create Program</span>
+          </button>
+        </div>
       </div>
 
       {/* Loading state banner below header */}
@@ -178,13 +195,59 @@ export default function ProgramsPage() {
                             })}
                         </div>
                     </div>
+                    {dbStages.length > 0 && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar max-w-full pb-1 mb-4">
+                            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
+                                Stage:
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedStageFilters(prev => ({ ...prev, [language]: '' }))}
+                                className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap ${
+                                    !selectedStageFilters[language]
+                                    ? 'bg-purple-600 text-white shadow-sm'
+                                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                }`}
+                            >
+                                All Stages
+                            </button>
+                            {dbStages.map((s: any) => {
+                                const isSelected = selectedStageFilters[language] === s._id;
+                                return (
+                                    <button
+                                        key={s._id}
+                                        type="button"
+                                        onClick={() => setSelectedStageFilters(prev => ({ ...prev, [language]: s._id }))}
+                                        className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap ${
+                                            isSelected
+                                            ? 'bg-purple-600 text-white shadow-sm'
+                                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                                        }`}
+                                    >
+                                        {s.name}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                type="button"
+                                onClick={() => setSelectedStageFilters(prev => ({ ...prev, [language]: 'unassigned' }))}
+                                className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors whitespace-nowrap ${
+                                    selectedStageFilters[language] === 'unassigned'
+                                    ? 'bg-purple-600 text-white shadow-sm'
+                                    : 'bg-gray-800/60 text-gray-400 hover:bg-gray-700'
+                                }`}
+                            >
+                                Unassigned
+                            </button>
+                        </div>
+                    )}
                     <div className="space-y-2">
                         {/* Desktop Header */}
                         <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-2 mb-2 text-gray-500 text-[11px] font-bold uppercase tracking-wider items-center">
                             <div className="col-span-1">#</div>
                             <div className="col-span-4">Program Name</div>
                             <div className="col-span-2">Group</div>
-                            <div className="col-span-2 flex items-center gap-1"><ArrowUpDown size={10} /> Order</div>
+                            <div className="col-span-2 flex items-center gap-1"><ArrowUpDown size={10} /> Order / Stage</div>
                             <div className="col-span-2">Status</div>
                             <div className="col-span-1 text-right">Actions</div>
                         </div>
@@ -240,19 +303,40 @@ export default function ProgramsPage() {
                                             </div>
 
                                             {/* Position badges */}
-                                            <div className="col-span-2 flex items-center gap-1.5">
-                                                {p.globalPosition != null ? (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                        <Hash size={9} />G{p.globalPosition}
-                                                    </span>
+                                            <div className="col-span-2 flex flex-col justify-center min-w-0 pr-2 overflow-hidden">
+                                                {(!p.stageId && p.globalPosition == null && p.languagePosition == null) ? (
+                                                    <span className="text-[11px] text-gray-600 font-mono">—</span>
                                                 ) : (
-                                                    <span className="text-[10px] text-gray-600 font-mono">—</span>
+                                                    <>
+                                                        {/* 1. Stage Name */}
+                                                        {p.stageId ? (
+                                                            <div className="text-xs font-semibold text-purple-300 truncate" title={`Stage: ${p.stageId?.name || 'Assigned'}${p.stagePosition != null ? ` · Order: #${p.stagePosition}` : ''}`}>
+                                                                {p.stageId?.name || 'Stage'}
+                                                                {p.stagePosition != null && (
+                                                                    <span className="text-purple-400/80 font-mono text-[10px] font-normal ml-1">
+                                                                        · #{p.stagePosition}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        ) : null}
+
+                                                        {/* 2. Global Position & 3. Program Position (No background color) */}
+                                                        {(p.globalPosition != null || p.languagePosition != null) ? (
+                                                            <div className="flex items-center gap-2 text-[11px] font-mono mt-0.5">
+                                                                {p.globalPosition != null && (
+                                                                    <span className="inline-flex items-center gap-0.5 text-blue-400 font-medium whitespace-nowrap" title={`Global Position: ${p.globalPosition}`}>
+                                                                        <Hash size={9} />G{p.globalPosition}
+                                                                    </span>
+                                                                )}
+                                                                {p.languagePosition != null && (
+                                                                    <span className="inline-flex items-center gap-0.5 text-amber-400 font-medium whitespace-nowrap" title={`Program Position: ${p.languagePosition}`}>
+                                                                        <Hash size={9} />{language.substring(0, 2)}{p.languagePosition}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        ) : null}
+                                                    </>
                                                 )}
-                                                {p.languagePosition != null ? (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                        <Hash size={9} />{language.substring(0,2)}{p.languagePosition}
-                                                    </span>
-                                                ) : null}
                                             </div>
 
                                             <div className="col-span-2 flex items-center" onClick={e => e.stopPropagation()}>
@@ -352,19 +436,24 @@ export default function ProgramsPage() {
                                                 )}
                                             </p>
                                             {/* Position badges on mobile */}
-                                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                            <div className="flex items-center gap-2 mt-1 flex-wrap text-[10px] font-mono">
+                                                {p.stageId && (
+                                                    <span className="text-purple-300 font-sans font-semibold">
+                                                        {p.stageId?.name || 'Stage'}{p.stagePosition != null ? ` · #${p.stagePosition}` : ''}
+                                                    </span>
+                                                )}
                                                 {p.globalPosition != null && (
-                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded-full">
+                                                    <span className="inline-flex items-center gap-0.5 text-blue-400 font-medium">
                                                         <Hash size={8} />G{p.globalPosition}
                                                     </span>
                                                 )}
                                                 {p.languagePosition != null && (
-                                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                                                    <span className="inline-flex items-center gap-0.5 text-amber-400 font-medium">
                                                         <Hash size={8} />{language.substring(0,2)}{p.languagePosition}
                                                     </span>
                                                 )}
                                                 {(p.topics && p.topics.length > 0) && (
-                                                    <p className="text-[10px] text-gray-400 font-bold">{p.topics.length} Topic{p.topics.length !== 1 ? 's' : ''}</p>
+                                                    <span className="text-gray-400 font-sans font-bold">{p.topics.length} Topic{p.topics.length !== 1 ? 's' : ''}</span>
                                                 )}
                                             </div>
                                             <p className="text-gray-500 text-xs mt-0.5">{p.groupId?.name || '-'}</p>
@@ -1199,16 +1288,19 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
     addToast: any;
 }) {
     const { data: dbLanguages = [] } = useLanguages();
+    const { data: dbStages = [] } = useStages();
     const [isNewLangModalOpen, setIsNewLangModalOpen] = useState(false);
 
     const [form, setForm] = useState({
         name: '',
         groupId: '',
+        stageId: '',
         status: 'upcoming',
         language: defaultLanguage || (dbLanguages[0]?.name || 'English'),
         isConversation: false,
         globalPosition: '',
         languagePosition: '',
+        stagePosition: '',
         positionCount: 3,
         criteriaEnabled: false,
         criteria: [] as Array<{ title: string; maxMarks: string | number }>,
@@ -1233,11 +1325,13 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                 ...prev,
                 name: '',
                 groupId: prev.groupId || (groups[0]?._id || ''),
+                stageId: '',
                 status: 'upcoming',
                 language: defaultLanguage || (dbLanguages[0]?.name || 'English'),
                 isConversation: false,
                 globalPosition: '',
                 languagePosition: '',
+                stagePosition: '',
                 positionCount: 3,
                 criteriaEnabled: false,
                 criteria: [],
@@ -1293,11 +1387,13 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
             const payload: any = {
                 name: form.name,
                 groupId: form.groupId,
+                stageId: form.stageId || null,
                 status: form.status,
                 language: form.language,
                 isConversation: form.isConversation,
                 globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
                 languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+                stagePosition: form.stagePosition !== '' ? parseInt(form.stagePosition, 10) : null,
                 positionCount: form.positionCount,
                 criteriaEnabled: form.criteriaEnabled,
                 criteria: form.criteriaEnabled ? form.criteria.map((c, idx) => ({ title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
@@ -1314,7 +1410,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
             addToast({ title: 'Success', message: 'Program created successfully!', type: 'success' });
             
             if (createMultiple) {
-                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '', criteria: [], gradeRules: [] }));
+                setForm(prev => ({ ...prev, name: '', globalPosition: '', languagePosition: '', stagePosition: '', criteria: [], gradeRules: [] }));
                 const nameInput = document.getElementById('program-name-input');
                 if (nameInput) nameInput.focus();
             } else {
@@ -1411,7 +1507,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
-                                        <Layers size={14} className="text-emerald-400" /> GROUP
+                                        <Layers size={14} className="text-purple-400" /> GROUP
                                     </label>
                                     <select
                                         value={form.groupId}
@@ -1423,6 +1519,23 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                         {groups.map(g => <option key={g._id} value={g._id}>{g.name}</option>)}
                                     </select>
                                 </div>
+                            </div>
+
+                            {/* Row: Stage Selection */}
+                            <div className="space-y-2">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                                        <Layers size={14} className="text-purple-400" /> STAGE
+                                    </label>
+                                </div>
+                                <select
+                                    value={form.stageId}
+                                    onChange={e => setForm({...form, stageId: e.target.value})}
+                                    className="w-full px-4 py-3 rounded-2xl bg-[#110E1B] border border-[#2A243A] text-white font-semibold focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm cursor-pointer"
+                                >
+                                    <option value="">No Stage (Single / Default)</option>
+                                    {dbStages.map(s => <option key={s._id} value={s._id}>{s.name} ({s.status})</option>)}
+                                </select>
                             </div>
 
                             {/* Row 3: Status & Position Count */}
@@ -1503,7 +1616,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                         <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">PROGRAM ORDER</span>
                                         <span className="text-xs text-gray-500 font-medium ml-auto">Optional</span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className={`grid ${form.stageId ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
                                         <div className="space-y-1.5">
                                             <label htmlFor="create-global-pos" className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
                                                 <Hash size={10} className="text-purple-400" /> GLOBAL
@@ -1515,7 +1628,7 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                                 onChange={e => setForm({...form, globalPosition: e.target.value})}
                                                 className="w-full px-3 py-2 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600 text-sm"
                                             />
-                                            <p className="text-[10px] text-gray-500">Order among all programs</p>
+                                            <p className="text-[10px] text-gray-500">Order among all</p>
                                         </div>
                                         <div className="space-y-1.5">
                                             <label htmlFor="create-lang-pos" className="text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
@@ -1530,6 +1643,21 @@ function CreateProgramModal({ isOpen, onClose, defaultLanguage, groups, refreshP
                                             />
                                             <p className="text-[10px] text-gray-500">Within {form.language}</p>
                                         </div>
+                                        {form.stageId && (
+                                            <div className="space-y-1.5">
+                                                <label htmlFor="create-stage-pos" className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">
+                                                    STAGE
+                                                </label>
+                                                <input
+                                                    id="create-stage-pos"
+                                                    type="number" min="1" step="1" placeholder="—"
+                                                    value={form.stagePosition}
+                                                    onChange={e => setForm({...form, stagePosition: e.target.value})}
+                                                    className="w-full px-3 py-2 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:outline-none focus:border-purple-500 transition-all placeholder:text-gray-600 text-sm"
+                                                />
+                                                <p className="text-[10px] text-gray-500">Within stage</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -1579,14 +1707,17 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
     refreshPrograms: () => void;
     addToast: any;
 }) {
+    const { data: dbStages = [] } = useStages();
     const [form, setForm] = useState({
         name: program.name || '',
         groupId: program.groupId?._id || program.groupId || '',
+        stageId: program.stageId?._id ? String(program.stageId._id) : (program.stageId ? String(program.stageId) : ''),
         status: program.status || 'upcoming',
         language: program.language || 'English',
         isConversation: program.isConversation || false,
         globalPosition: program.globalPosition != null ? String(program.globalPosition) : '',
         languagePosition: program.languagePosition != null ? String(program.languagePosition) : '',
+        stagePosition: program.stagePosition != null ? String(program.stagePosition) : '',
         positionCount: program.positionCount || 3,
         criteriaEnabled: program.criteriaEnabled || false,
         criteria: (program.criteria || []).map((c: any) => ({ _id: c._id, title: c.title, maxMarks: c.maxMarks })),
@@ -1674,11 +1805,13 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
             const payload: any = {
                 name: form.name,
                 groupId: form.groupId,
+                stageId: form.stageId || null,
                 status: form.status,
                 language: form.language,
                 isConversation: form.isConversation,
                 globalPosition: form.globalPosition !== '' ? parseInt(form.globalPosition, 10) : null,
                 languagePosition: form.languagePosition !== '' ? parseInt(form.languagePosition, 10) : null,
+                stagePosition: form.stagePosition !== '' ? parseInt(form.stagePosition, 10) : null,
                 positionCount: form.positionCount,
                 criteriaEnabled: form.criteriaEnabled,
                 criteria: form.criteriaEnabled ? form.criteria.map((c: any, idx: number) => ({ _id: c._id, title: c.title.trim(), maxMarks: Number(c.maxMarks), position: idx })) : [],
@@ -1702,6 +1835,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
     };
 
     return (
+        <>
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200"
             onClick={onClose}
@@ -1782,6 +1916,23 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                             </div>
                         </div>
 
+                        {/* Stage */}
+                        <div className="space-y-1.5">
+                            <div>
+                                <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Layers size={13} className="text-purple-400" /> Stage
+                                </label>
+                            </div>
+                            <select
+                                value={form.stageId}
+                                onChange={e => setForm({...form, stageId: e.target.value})}
+                                className="w-full p-3 sm:p-3.5 rounded-xl bg-[#13111C] border border-[#2D283E] text-white focus:border-purple-500 focus:outline-none transition-colors appearance-none text-sm cursor-pointer"
+                            >
+                                <option value="">No Stage (Single / Default)</option>
+                                {dbStages.map(s => <option key={s._id} value={s._id}>{s.name} ({s.status})</option>)}
+                            </select>
+                        </div>
+
                         {/* Status & Position Count */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-1.5">
@@ -1858,7 +2009,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                                 <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Program Order</span>
                                 <span className="text-[10px] text-gray-500 ml-auto">Leave blank to remove from ordering</span>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className={`grid grid-cols-1 ${form.stageId ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-3`}>
                                 <PositionInput
                                     id="edit-global-pos"
                                     label="Global Position"
@@ -1873,6 +2024,15 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                                     value={form.languagePosition}
                                     onChange={v => setForm({...form, languagePosition: v})}
                                 />
+                                {form.stageId && (
+                                    <PositionInput
+                                        id="edit-stage-pos"
+                                        label="Stage Position"
+                                        sublabel="Order within stage"
+                                        value={form.stagePosition}
+                                        onChange={v => setForm({...form, stagePosition: v})}
+                                    />
+                                )}
                             </div>
                         </div>
 
@@ -1898,6 +2058,7 @@ function EditProgramModal({ program, groups, onClose, refreshPrograms, addToast 
                 </form>
             </div>
         </div>
+        </>
     );
 }
 

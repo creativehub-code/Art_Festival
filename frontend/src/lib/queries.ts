@@ -27,6 +27,8 @@ export interface Program {
   isConversation?: boolean;
   globalPosition?: number | null;
   languagePosition?: number | null;
+  stageId?: Stage | string | null;
+  stagePosition?: number | null;
   positionCount?: number;
   judgeDisplayOrderMode?: 'default' | 'asc' | 'desc' | 'custom';
   customJudgeDisplayOrder?: string[];
@@ -74,6 +76,16 @@ export interface Language {
   updatedAt?: string;
 }
 
+export interface Stage {
+  _id: string;
+  name: string;
+  description?: string;
+  status?: string;
+  position: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // --- QUERIES ---
 
 export const usePrograms = () => {
@@ -84,6 +96,19 @@ export const usePrograms = () => {
       return data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useStagePrograms = (stageId: string | null) => {
+  return useQuery<Program[]>({
+    queryKey: ['programs', { stageId }],
+    queryFn: async () => {
+      if (!stageId) return [];
+      const data = await apiRequest(`/programs?stageId=${stageId}`);
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: Boolean(stageId),
+    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -114,6 +139,17 @@ export const useLanguages = () => {
     queryKey: ['languages'],
     queryFn: async () => {
       const data = await apiRequest('/languages');
+      return Array.isArray(data) ? data : [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useStages = () => {
+  return useQuery<Stage[]>({
+    queryKey: ['stages'],
+    queryFn: async () => {
+      const data = await apiRequest('/stages');
       return Array.isArray(data) ? data : [];
     },
     staleTime: 5 * 60 * 1000,
@@ -388,6 +424,7 @@ export const useInvalidate = () => {
   return {
     invalidatePrograms: () => queryClient.invalidateQueries({ queryKey: ['programs'] }),
     invalidateLanguages: () => queryClient.invalidateQueries({ queryKey: ['languages'] }),
+    invalidateStages: () => queryClient.invalidateQueries({ queryKey: ['stages'] }),
     invalidateGroups: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
       queryClient.invalidateQueries({ queryKey: ['groupCount'] });
