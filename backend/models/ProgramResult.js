@@ -25,12 +25,12 @@ const programResultSchema = new mongoose.Schema(
       default: false,
     },
     position: {
-      type: Number, // 1 for first place, 2 for second place, 3 for third place
-      required: true,
+      type: Number, // 1 for first place, 2 for second place, 3 for third place (null when only grade bonus awarded prior to final verification)
+      default: null,
     },
     positionPoints: {
-      type: Number, // Points awarded for this position
-      required: true,
+      type: Number, // Points awarded for this position (0 when unfinalized or position > positionCount)
+      default: 0,
     },
     // ── Grade System Fields (null when gradeSystemEnabled is false on the program) ──
     percentage: {

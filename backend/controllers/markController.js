@@ -550,6 +550,31 @@ const getMarksByProgram = async (req, res) => {
   }
 };
 
+// Helper function to calculate grade, percentage, and gradePoints for a score
+const calculateGradeForScore = (program, currentScore, judgeCount) => {
+  let percentage = null;
+  let grade = null;
+  let gradePoints = 0;
+
+  if (program.gradeSystemEnabled && program.gradeRules && program.gradeRules.length > 0) {
+    const maxMarksPerJudge = program.maxMarks || 100;
+    const totalMaxPossible = judgeCount * maxMarksPerJudge;
+
+    if (totalMaxPossible > 0) {
+      percentage = parseFloat(((currentScore / totalMaxPossible) * 100).toFixed(4));
+      const rule = program.gradeRules.find(
+        (r) => percentage >= r.minPercentage && (r.maxPercentage == null || percentage <= r.maxPercentage)
+      );
+      if (rule) {
+        grade = rule.gradeName || rule.grade || null;
+        gradePoints = rule.gradePoints !== undefined ? rule.gradePoints : (rule.points || 0);
+      }
+    }
+  }
+
+  return { percentage, grade, gradePoints };
+};
+
 // Helper function to recalculate ProgramResult, Participant.totalScore, and Team.totalScore
 const recalculateProgramScoresInternal = async (programId, session = null, options = {}) => {
   const { force = false } = options;
@@ -570,8 +595,11 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
   if (session) resultsExistQuery.session(session);
   const resultsExist = await resultsExistQuery;
 
-  // If no ProgramResult exists and program status is not completed and force is false, skip recalculating ProgramResult
-  if (!resultsExist && program.status !== "completed" && !force) {
+  const isFinalCalculation = Boolean(force || program.status === "completed");
+
+  // If not a final calculation, grade system is not enabled, and no results exist,
+  // there are no positions to finalize and no grade bonus to calculate.
+  if (!isFinalCalculation && !program.gradeSystemEnabled && !resultsExist) {
     return { participantsUpdated: 0, teamsUpdated: 0, resultsAwarded: 0 };
   }
 
@@ -579,6 +607,70 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
   const marksQuery = JudgeMark.find({ programId, status: "approved" });
   if (session) marksQuery.session(session);
   const marks = await marksQuery;
+
+  // If no approved marks exist, clean up any previous results and recalculate affected totals
+  if (marks.length === 0) {
+    if (resultsExist) {
+      await ProgramResult.deleteMany({ programId }, session ? { session } : {});
+
+      const allProgramParticipantsQuery = Participant.find({ programs: programId }).select("_id teamId");
+      if (session) allProgramParticipantsQuery.session(session);
+      const allProgramParticipants = await allProgramParticipantsQuery;
+
+      const affectedParticipantIds = new Set(allProgramParticipants.map(p => p._id.toString()));
+      if (program.isConversation) {
+        const pairsForAffectedQuery = ConversationPair.find({ programId });
+        if (session) pairsForAffectedQuery.session(session);
+        const pairsForAffected = await pairsForAffectedQuery;
+        pairsForAffected.forEach(pair => pair.participants.forEach(p => affectedParticipantIds.add(p.toString())));
+      }
+
+      const affectedTeamIds = new Set();
+      for (const partId of affectedParticipantIds) {
+        const resQuery = ProgramResult.find({
+          $or: [{ participantId: partId }, { participantIds: partId }]
+        });
+        if (session) resQuery.session(session);
+        const allResults = await resQuery;
+
+        const totalCombinedScore = allResults.reduce(
+          (sum, r) => sum + (r.positionPoints || 0) + (r.gradePoints || 0),
+          0,
+        );
+
+        const updatePartQuery = Participant.findByIdAndUpdate(
+          partId,
+          { totalScore: totalCombinedScore },
+          { new: true, ...(session ? { session } : {}) }
+        );
+        const updatedParticipant = await updatePartQuery;
+        if (updatedParticipant && updatedParticipant.teamId) {
+          affectedTeamIds.add(updatedParticipant.teamId.toString());
+        }
+      }
+
+      for (const teamId of affectedTeamIds) {
+        if (!teamId) continue;
+        const teamResQuery = ProgramResult.find({ teamId });
+        if (session) teamResQuery.session(session);
+        const teamResults = await teamResQuery;
+
+        const teamTotalScore = teamResults.reduce(
+          (sum, r) => sum + (r.positionPoints || 0) + (r.gradePoints || 0),
+          0,
+        );
+        await Team.findByIdAndUpdate(teamId, { totalScore: teamTotalScore }, session ? { session } : {});
+      }
+
+      return {
+        participantsUpdated: affectedParticipantIds.size,
+        teamsUpdated: affectedTeamIds.size,
+        resultsAwarded: 0,
+      };
+    }
+
+    return { participantsUpdated: 0, teamsUpdated: 0, resultsAwarded: 0 };
+  }
 
   // 2. Fetch ConversationPairs if isConversation === true
   let pairs = [];
@@ -662,42 +754,31 @@ const recalculateProgramScoresInternal = async (programId, session = null, optio
       }
     }
 
-    const positionCount = program.positionCount || 3;
-    if (currentPosition === 1 && positionCount >= 1) rankPoints = settings.firstPlacePoints;
-    else if (currentPosition === 2 && positionCount >= 2) rankPoints = settings.secondPlacePoints;
-    else if (currentPosition === 3 && positionCount >= 3) rankPoints = settings.thirdPlacePoints;
-    else rankPoints = 0;
-
-    // Grade calculation (only when gradeSystemEnabled)
-    let percentage = null;
-    let grade = null;
-    let gradePoints = 0;
-
-    if (program.gradeSystemEnabled && program.gradeRules && program.gradeRules.length > 0) {
-      const maxMarksPerJudge = program.maxMarks || 100;
-      const judgeCount = programJudgeCounts[pId] ? programJudgeCounts[pId].size : 0;
-      const totalMaxPossible = judgeCount * maxMarksPerJudge;
-
-      if (totalMaxPossible > 0) {
-        percentage = parseFloat(((currentScore / totalMaxPossible) * 100).toFixed(4));
-        const rule = program.gradeRules.find(r => percentage >= r.minPercentage && percentage <= r.maxPercentage);
-        if (rule) {
-          grade = rule.gradeName;
-          gradePoints = rule.gradePoints || 0;
-        }
-      }
+    // Position points are awarded ONLY during final calculation (Verify & Calculate or completed program)
+    if (isFinalCalculation) {
+      const positionCount = program.positionCount || 3;
+      if (currentPosition === 1 && positionCount >= 1) rankPoints = settings.firstPlacePoints;
+      else if (currentPosition === 2 && positionCount >= 2) rankPoints = settings.secondPlacePoints;
+      else if (currentPosition === 3 && positionCount >= 3) rankPoints = settings.thirdPlacePoints;
+      else rankPoints = 0;
+    } else {
+      rankPoints = 0;
     }
 
+    // Grade calculation (only when gradeSystemEnabled)
+    const judgeCount = programJudgeCounts[pId] ? programJudgeCounts[pId].size : 0;
+    const { percentage, grade, gradePoints } = calculateGradeForScore(program, currentScore, judgeCount);
+
     // Award if participant earned position points OR (if grade system enabled) earned grade points or a grade
-    const shouldAward = program.gradeSystemEnabled
-      ? (rankPoints > 0 || gradePoints > 0 || grade !== null)
-      : (rankPoints > 0);
+    const shouldAward = isFinalCalculation
+      ? (program.gradeSystemEnabled ? (rankPoints > 0 || gradePoints > 0 || grade !== null) : (rankPoints > 0))
+      : (program.gradeSystemEnabled && (gradePoints > 0 || grade !== null));
 
     if (shouldAward) {
       awards.push({
         programId,
         participantId: pId,
-        position: currentPosition,
+        position: isFinalCalculation ? currentPosition : null,
         positionPoints: rankPoints,
         percentage,
         grade,
@@ -849,6 +930,347 @@ const calculateScores = async (req, res) => {
       return res.status(400).json({ message: "No marks found for this program to verify." });
     }
     sendError(res, 500, "Failed to calculate scores", error);
+  }
+};
+
+// @desc    Recalculate Grade Bonuses for Completed Programs (Admin Trigger)
+//          Preserves finalized positions and positionPoints while calculating/updating grades.
+// @route   POST /api/marks/recalculate-grades/:programId
+// @access  Admin
+
+// Sentinel error types used to communicate validation failures out of withRetryTransaction
+// without accidentally committing the transaction or sending multiple responses.
+class ValidationError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = "ValidationError";
+    this.statusCode = statusCode;
+  }
+}
+
+const recalculateCompletedProgramGrades = async (req, res) => {
+  const { programId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(programId)) {
+    return res.status(400).json({ message: "Invalid programId format." });
+  }
+
+  try {
+    // --- FIX C-01: withRetryTransaction callback MUST throw to signal failures.
+    // Never call res.json() inside the callback — it returns from the callback
+    // without throwing, so withRetryTransaction commits the transaction silently
+    // and the outer handler receives null while the response is already sent.
+    // All validation failures now throw a ValidationError which is caught below.
+    const responseData = await withRetryTransaction("recalculateCompletedProgramGrades", async (session) => {
+      const program = await Program.findById(programId).session(session);
+      if (!program) {
+        throw new Error("PROGRAM_NOT_FOUND");
+      }
+
+      if (!program.gradeSystemEnabled || !program.gradeRules || program.gradeRules.length === 0) {
+        // FIX C-01: throw instead of return res.json()
+        throw new ValidationError(400, "Grade system is not enabled or has no grade rules configured for this program.");
+      }
+
+      // 1. Get all APPROVED marks for this program
+      const marks = await JudgeMark.find({ programId, status: "approved" }).session(session);
+      if (marks.length === 0) {
+        throw new Error("NO_APPROVED_MARKS");
+      }
+
+      // 2. Fetch ConversationPairs if isConversation === true
+      let pairs = [];
+      if (program.isConversation) {
+        pairs = await ConversationPair.find({ programId }).session(session);
+      }
+
+      // 3. Aggregate marks and judge counts for each participant or pair primary
+      const programScores = {};       // { participantId: totalMarksObtained }
+      const programJudgeCounts = {};  // { participantId: Set<judgeId> }
+
+      if (program.isConversation && pairs.length > 0) {
+        const pIdToPrimary = {};
+        pairs.forEach((pair) => {
+          const primStr = pair.primaryParticipantId.toString();
+          pair.participants.forEach((p) => {
+            pIdToPrimary[p.toString()] = primStr;
+          });
+        });
+
+        const judgePairScores = {};
+        marks.forEach((mark) => {
+          const jId = mark.judgeId.toString();
+          const rawPId = mark.participantId.toString();
+          const primId = pIdToPrimary[rawPId] || rawPId;
+          const key = `${jId}_${primId}`;
+          judgePairScores[key] = mark.marksGiven || 0;
+          if (!programJudgeCounts[primId]) programJudgeCounts[primId] = new Set();
+          programJudgeCounts[primId].add(jId);
+        });
+
+        Object.entries(judgePairScores).forEach(([key, score]) => {
+          const [, primId] = key.split("_");
+          programScores[primId] = (programScores[primId] || 0) + score;
+        });
+      } else {
+        marks.forEach((mark) => {
+          const pId = mark.participantId.toString();
+          const jId = mark.judgeId.toString();
+          if (!programScores[pId]) programScores[pId] = 0;
+          programScores[pId] += mark.marksGiven || 0;
+          if (!programJudgeCounts[pId]) programJudgeCounts[pId] = new Set();
+          programJudgeCounts[pId].add(jId);
+        });
+      }
+
+      // 4. Calculate grade for each participant/unit using the existing formula
+      const gradesByUnitId = {};
+      Object.entries(programScores).forEach(([unitId, currentScore]) => {
+        const judgeCount = programJudgeCounts[unitId] ? programJudgeCounts[unitId].size : 0;
+        gradesByUnitId[unitId] = calculateGradeForScore(program, currentScore, judgeCount);
+      });
+
+      // 5. Fetch existing ProgramResults for this program and update grade fields
+      //    using bulkWrite (FIX P-03: replace sequential .save() calls with one batch write).
+      const existingResults = await ProgramResult.find({ programId }).lean().session(session);
+
+      const handledUnitIds = new Set();
+      let updatedCount = 0;
+      let insertedCount = 0;
+
+      // Build bulkWrite ops for grade updates — PRESERVE position, positionPoints, all other fields
+      const gradeUpdateOps = [];
+
+      for (const resDoc of existingResults) {
+        const primaryIdStr = (resDoc.participantId || (resDoc.participantIds && resDoc.participantIds[0]))?.toString();
+        if (primaryIdStr) {
+          handledUnitIds.add(primaryIdStr);
+        }
+        if (resDoc.participantIds && resDoc.participantIds.length > 0) {
+          resDoc.participantIds.forEach((id) => handledUnitIds.add(id.toString()));
+        }
+
+        let gradeData = null;
+        if (primaryIdStr && gradesByUnitId[primaryIdStr]) {
+          gradeData = gradesByUnitId[primaryIdStr];
+        } else if (resDoc.participantIds && resDoc.participantIds.length > 0) {
+          for (const pid of resDoc.participantIds) {
+            const pStr = pid.toString();
+            if (gradesByUnitId[pStr]) {
+              gradeData = gradesByUnitId[pStr];
+              break;
+            }
+          }
+        }
+        if (!gradeData) {
+          gradeData = { percentage: null, grade: null, gradePoints: 0 };
+        }
+
+        // $set only grade-related fields; position/positionPoints/participantIds/teamId untouched
+        gradeUpdateOps.push({
+          updateOne: {
+            filter: { _id: resDoc._id },
+            update: { $set: { percentage: gradeData.percentage, grade: gradeData.grade, gradePoints: gradeData.gradePoints } },
+          },
+        });
+        updatedCount++;
+      }
+
+      if (gradeUpdateOps.length > 0) {
+        await ProgramResult.bulkWrite(gradeUpdateOps, { session });
+      }
+
+      // 6. Handle participants/pairs who earned gradePoints > 0 or a grade, but had no existing ProgramResult
+      // (e.g. 4th place finish not previously awarded position points)
+      const allScoredUnitIds = Object.keys(gradesByUnitId);
+      const missingUnitIds = allScoredUnitIds.filter((id) => !handledUnitIds.has(id));
+
+      if (missingUnitIds.length > 0) {
+        const missingPartDocs = await Participant.find({ _id: { $in: missingUnitIds } })
+          .select("_id teamId")
+          .lean()
+          .session(session);
+
+        const newResultDocs = [];
+        for (const unitId of missingUnitIds) {
+          const gradeData = gradesByUnitId[unitId];
+          if (!gradeData || (gradeData.gradePoints === 0 && gradeData.grade === null)) {
+            continue;
+          }
+
+          let participantIds = [unitId];
+          let teamId = null;
+
+          if (program.isConversation) {
+            const pair = pairs.find((p) => p.primaryParticipantId.toString() === unitId);
+            if (pair) {
+              participantIds = pair.participants.map((p) => p.toString());
+              teamId = pair.teamId;
+            }
+          } else {
+            const part = missingPartDocs.find((p) => p._id.toString() === unitId);
+            if (part) {
+              teamId = part.teamId;
+            }
+          }
+
+          newResultDocs.push({
+            programId,
+            participantId: unitId,
+            participantIds,
+            teamId,
+            isConversation: program.isConversation,
+            position: null,
+            positionPoints: 0,
+            percentage: gradeData.percentage,
+            grade: gradeData.grade,
+            gradePoints: gradeData.gradePoints,
+          });
+        }
+
+        if (newResultDocs.length > 0) {
+          await ProgramResult.create(newResultDocs, { session, ordered: true });
+          insertedCount = newResultDocs.length;
+        }
+      }
+
+      // 7. Global Recalculation: collect all affected participant IDs
+      const allProgramParticipants = await Participant.find({ programs: programId })
+        .select("_id teamId")
+        .lean()
+        .session(session);
+      const affectedParticipantIds = new Set(allProgramParticipants.map((p) => p._id.toString()));
+      marks.forEach((m) => affectedParticipantIds.add(m.participantId.toString()));
+
+      if (program.isConversation) {
+        pairs.forEach((pair) => pair.participants.forEach((p) => affectedParticipantIds.add(p.toString())));
+      }
+
+      const affectedParticipantArr = [...affectedParticipantIds];
+
+      // FIX P-01: Replace N+1 per-participant queries with a single $in fetch + in-memory aggregation + bulkWrite.
+      // Pre-fetch ALL ProgramResult records for all affected participants in ONE query.
+      const allParticipantResults = await ProgramResult.find({
+        $or: [
+          { participantId: { $in: affectedParticipantArr } },
+          { participantIds: { $in: affectedParticipantArr } },
+        ],
+      })
+        .select("participantId participantIds positionPoints gradePoints")
+        .lean()
+        .session(session);
+
+      // Build per-participant totals in memory — O(R) where R = total result rows
+      const participantTotalsMap = new Map();
+      for (const id of affectedParticipantArr) participantTotalsMap.set(id, 0);
+
+      for (const result of allParticipantResults) {
+        const pts = (result.positionPoints || 0) + (result.gradePoints || 0);
+        // FIX 1: Deduplicate participant IDs within each result document using a Set.
+        // This ensures a participant appearing in both participantId and participantIds
+        // receives points for this result exactly once (preventing double counting).
+        const docParticipantIds = new Set();
+        if (result.participantId) {
+          docParticipantIds.add(result.participantId.toString());
+        }
+        if (result.participantIds && Array.isArray(result.participantIds)) {
+          for (const pid of result.participantIds) {
+            if (pid) docParticipantIds.add(pid.toString());
+          }
+        }
+
+        for (const pidStr of docParticipantIds) {
+          if (participantTotalsMap.has(pidStr)) {
+            participantTotalsMap.set(pidStr, participantTotalsMap.get(pidStr) + pts);
+          }
+        }
+      }
+
+      // Single bulkWrite for all participant totalScore updates
+      const participantBulkOps = affectedParticipantArr.map((id) => ({
+        updateOne: {
+          filter: { _id: id },
+          update: { $set: { totalScore: participantTotalsMap.get(id) || 0 } },
+        },
+      }));
+      if (participantBulkOps.length > 0) {
+        await Participant.bulkWrite(participantBulkOps, { session });
+      }
+
+      // Collect affected team IDs from the participant docs fetched above
+      const affectedTeamIds = new Set();
+      for (const p of allProgramParticipants) {
+        if (p.teamId) affectedTeamIds.add(p.teamId.toString());
+      }
+      // Also capture teamIds from marks (participants found via mark records may not be in programs array)
+      const extraPartIds = [...affectedParticipantIds].filter(
+        (id) => !allProgramParticipants.find((p) => p._id.toString() === id)
+      );
+      if (extraPartIds.length > 0) {
+        const extraParts = await Participant.find({ _id: { $in: extraPartIds } })
+          .select("_id teamId")
+          .lean()
+          .session(session);
+        extraParts.forEach((p) => { if (p.teamId) affectedTeamIds.add(p.teamId.toString()); });
+      }
+
+      // FIX P-02: Replace N+1 per-team queries with a single $in fetch + in-memory aggregation + bulkWrite.
+      // Pre-fetch ALL ProgramResult records for all affected teams in ONE query.
+      const affectedTeamArr = [...affectedTeamIds];
+      const teamTotalsMap = new Map();
+      for (const tid of affectedTeamArr) teamTotalsMap.set(tid, 0);
+
+      if (affectedTeamArr.length > 0) {
+        // Fetch all team results; for conversation programs each result has one teamId — award counted once per result row.
+        const allTeamResults = await ProgramResult.find({ teamId: { $in: affectedTeamArr } })
+          .select("teamId positionPoints gradePoints")
+          .lean()
+          .session(session);
+
+        for (const result of allTeamResults) {
+          const tid = result.teamId ? result.teamId.toString() : null;
+          if (tid && teamTotalsMap.has(tid)) {
+            teamTotalsMap.set(tid, teamTotalsMap.get(tid) + (result.positionPoints || 0) + (result.gradePoints || 0));
+          }
+        }
+
+        const teamBulkOps = affectedTeamArr.map((tid) => ({
+          updateOne: {
+            filter: { _id: tid },
+            update: { $set: { totalScore: teamTotalsMap.get(tid) || 0 } },
+          },
+        }));
+        await Team.bulkWrite(teamBulkOps, { session });
+      }
+
+      // 8. Return minimal response data — FIX S-01: do NOT populate full participant documents.
+      //    Return only counts and identifiers; frontend uses invalidation hooks to refresh data.
+      return {
+        success: true,
+        message: "Grade bonuses recalculated successfully while preserving finalized positions.",
+        updatedResults: updatedCount,
+        newGradeResults: insertedCount,
+        participantsUpdated: affectedParticipantIds.size,
+        teamsUpdated: affectedTeamIds.size,
+        programId,
+      };
+    });
+
+    // withRetryTransaction now returns the callback's return value directly
+    return res.json(responseData);
+
+  } catch (error) {
+    // FIX C-01: ValidationError thrown inside the callback propagates cleanly here
+    if (error instanceof ValidationError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    if (error.message === "PROGRAM_NOT_FOUND") {
+      return res.status(404).json({ message: "Program not found." });
+    }
+    if (error.message === "NO_APPROVED_MARKS") {
+      return res.status(400).json({ message: "No approved marks found for this program." });
+    }
+    sendError(res, 500, "Failed to recalculate program grades", error);
   }
 };
 
@@ -1069,7 +1491,7 @@ const getAllExportData = async (req, res) => {
       .lean(); // Use lean() for performance since we don't need Mongoose documents
 
     // 2. Get all public results across all completed programs
-    const allResults = await ProgramResult.find()
+    const allResults = await ProgramResult.find({ position: { $ne: null } })
       .populate({
         path: "participantId",
         select: "name chestNumber teamId",
@@ -1339,7 +1761,7 @@ const editApprovedMark = async (req, res) => {
             reason: reason || "No reason provided",
           },
         ],
-        { session }
+        { session, ordered: true }
       );
 
       // 2. Update mark
@@ -1443,6 +1865,8 @@ const getReviewPrograms = async (req, res) => {
         positionCount: p.positionCount,
         criteria: p.criteria || [],
         criteriaEnabled: p.criteriaEnabled,
+        gradeSystemEnabled: p.gradeSystemEnabled || false,
+        gradeRules: p.gradeRules || [],
         participantCount: participantCountMap[pidStr] || 0,
         submittedCount: markStatsMap[pidStr] || 0,
         totalAssigned: programAssignmentMap[pidStr] ? programAssignmentMap[pidStr].size : 0,
@@ -1522,10 +1946,12 @@ const getReviewProgramDetail = async (req, res) => {
     });
 
     const approvedMarksCount = await JudgeMark.countDocuments({ programId, status: 'approved' });
-    const resultsCount = await ProgramResult.countDocuments({ programId });
+    const resultsCount = await ProgramResult.countDocuments({ programId, position: { $ne: null } });
+    const results = await ProgramResult.find({ programId }).lean();
 
     res.json({
       marks,
+      results,
       assignedJudges: Object.values(assignedJudgesMap),
       total,
       page,
@@ -1554,6 +1980,8 @@ module.exports = {
   getReviewPrograms,
   getReviewProgramDetail,
   recalculateProgramScoresInternal,
+  recalculateCompletedProgramGrades,
+  ...(process.env.NODE_ENV === "test" ? { calculateGradeForScore } : {}),
 };
 
 

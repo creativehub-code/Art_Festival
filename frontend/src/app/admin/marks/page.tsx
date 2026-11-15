@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { apiRequest, API_BASE_URL } from '@/lib/api';
-import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Filter, Cloud, X, Edit, SlidersHorizontal, Award } from 'lucide-react';
+import { FileDown, RefreshCw, Search, Trophy, CheckCircle, Clock, ChevronDown, Cloud, X, Edit, SlidersHorizontal, Award } from 'lucide-react';
 import { useReviewPrograms, useReviewProgramMarks, useGroups, useInvalidate, useSettings, useConversationPairs } from '@/lib/queries';
 import ToastContainer, { type ToastData } from '@/components/ToastContainer';
 import ConfirmModal from '@/components/ConfirmModal';
@@ -10,13 +10,12 @@ import ConfirmModal from '@/components/ConfirmModal';
 const DEFAULT_SETTINGS = { firstPlacePoints: 5, secondPlacePoints: 3, thirdPlacePoints: 1 };
 
 export default function MarksReviewPage() {
-  const { data: programs = [] as any[] } = useReviewPrograms();
+  const { data: programs = [] as any[], isLoading: isProgramsLoading } = useReviewPrograms();
   const { data: groups = [] as any[] } = useGroups();
   const { invalidatePrograms, invalidateTeams, invalidateParticipants, invalidateReviewPrograms, invalidateReviewProgramMarks, invalidateIndividualRankings } = useInvalidate();
   const refreshPrograms = invalidatePrograms;
   const refreshTeams = invalidateTeams;
   const refreshParticipants = invalidateParticipants;
-  const contextLoading = false;
   
   const [verifying, setVerifying] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -24,6 +23,8 @@ export default function MarksReviewPage() {
   const [verifyResults, setVerifyResults] = useState<any[] | null>(null); // position results after verify
   const [showCalculateConfirm, setShowCalculateConfirm] = useState(false);
   const [showMissingResultsConfirm, setShowMissingResultsConfirm] = useState(false);
+  const [showRecalculateGradesConfirm, setShowRecalculateGradesConfirm] = useState(false);
+  const [recalculatingGrades, setRecalculatingGrades] = useState(false);
   const [showApproveAllConfirm, setShowApproveAllConfirm] = useState(false);
   const [isApprovingAll, setIsApprovingAll] = useState(false);
 
@@ -179,6 +180,37 @@ export default function MarksReviewPage() {
   const groupedMarks = useMemo(() => {
     if (!marks.length) return [];
     
+    // Map existing ProgramResults for this program if available
+    const resultsList = marksData?.results || [];
+    const resultMap = new Map<string, any>();
+    resultsList.forEach((r: any) => {
+      const pId = r.participantId?._id ? String(r.participantId._id) : (r.participantId ? String(r.participantId) : null);
+      if (pId) resultMap.set(pId, r);
+      if (r.participantIds && Array.isArray(r.participantIds)) {
+        r.participantIds.forEach((pid: any) => {
+          const pidStr = pid?._id ? String(pid._id) : String(pid);
+          if (pidStr) resultMap.set(pidStr, r);
+        });
+      }
+    });
+
+    const isGradeEnabled = Boolean(selectedProgramData?.gradeSystemEnabled && selectedProgramData?.gradeRules && selectedProgramData.gradeRules.length > 0);
+    const maxMarksPerJudge = selectedProgramData?.maxMarks || 100;
+
+    // FIX F-01: Pre-build a Map<participantId, pair> so the per-mark lookup is O(1)
+    // instead of O(M) where M = number of conversation pairs.
+    const conversationPairMap = new Map<string, any>();
+    if (selectedProgramData?.isConversation && conversationPairs.length > 0) {
+      conversationPairs.forEach((p: any) => {
+        if (p.participants) {
+          p.participants.forEach((part: any) => {
+            const partId = part._id ? String(part._id) : String(part);
+            conversationPairMap.set(partId, p);
+          });
+        }
+      });
+    }
+
     const participantMap: Record<string, any> = {};
     
     // 1. Group by participant
@@ -191,7 +223,8 @@ export default function MarksReviewPage() {
         // If this is a conversation program, we group by the primary pair ID 
         // to merge the mirrored scores visually into one row.
         if (selectedProgramData?.isConversation && conversationPairs.length > 0) {
-            const pair = conversationPairs.find((p: any) => p.participants?.some((part:any) => part._id === pId));
+            // FIX F-01: O(1) Map lookup replaces O(M) .find() scan
+            const pair = conversationPairMap.get(String(pId));
             if (pair) {
                 // Determine if this is the primary or secondary
                 const isPrimary = pair.primaryParticipantId?._id === pId;
@@ -214,6 +247,13 @@ export default function MarksReviewPage() {
                 participant: participantObj,
                 judgesMarks: [],
                 totalScore: 0,
+                rawTotal: 0,
+                approvedJudgeCount: 0,
+                submittedTotal: 0,
+                submittedJudgeCount: 0,
+                grade: null,
+                percentage: null,
+                gradePoints: 0,
                 rank: null
             };
         }
@@ -226,15 +266,53 @@ export default function MarksReviewPage() {
             status: m.status || 'pending',
             criteriaMarks: m.criteriaMarks || [],
         });
+
+        if (m.marksGiven !== undefined && m.marksGiven !== null && !isNaN(Number(m.marksGiven))) {
+            participantMap[pId].submittedTotal += Number(m.marksGiven);
+            participantMap[pId].submittedJudgeCount += 1;
+        }
+
         if (m.status === 'approved') {
-            participantMap[pId].totalScore += m.marksGiven || 0;
+            participantMap[pId].rawTotal += Number(m.marksGiven) || 0;
+            participantMap[pId].approvedJudgeCount += 1;
         }
     });
 
-    // 2. Convert to array and sort by total score descending
+    // 2. Resolve grade and total score for each participant
+    Object.keys(participantMap).forEach((id) => {
+        const item = participantMap[id];
+        const pRes = resultMap.get(id);
+
+        if (pRes) {
+            item.grade = pRes.grade || null;
+            item.percentage = pRes.percentage ?? null;
+            item.gradePoints = pRes.gradePoints || 0;
+        } else if (isGradeEnabled && item.submittedJudgeCount > 0) {
+            const score = item.approvedJudgeCount > 0 ? item.rawTotal : item.submittedTotal;
+            const judgeCount = item.approvedJudgeCount > 0 ? item.approvedJudgeCount : item.submittedJudgeCount;
+            const totalMax = judgeCount * maxMarksPerJudge;
+            if (totalMax > 0) {
+                const pct = parseFloat(((score / totalMax) * 100).toFixed(4));
+                item.percentage = pct;
+                const rule = selectedProgramData.gradeRules.find((r: any) => pct >= r.minPercentage && pct <= r.maxPercentage);
+                if (rule) {
+                    item.grade = rule.gradeName;
+                    item.gradePoints = rule.gradePoints || 0;
+                }
+            }
+        }
+
+        if (item.approvedJudgeCount > 0) {
+            item.totalScore = item.rawTotal + (item.gradePoints || 0);
+        } else {
+            item.totalScore = 0;
+        }
+    });
+
+    // 3. Convert to array and sort by total score descending
     const sortedParticipants = Object.values(participantMap).sort((a, b) => b.totalScore - a.totalScore);
 
-    // 3. Assign true ranks (handling ties - dense ranking)
+    // 4. Assign true ranks (handling ties - dense ranking)
     let currentRank = 1;
     for (let i = 0; i < sortedParticipants.length; i++) {
         if (i > 0 && sortedParticipants[i].totalScore < sortedParticipants[i - 1].totalScore) {
@@ -244,7 +322,7 @@ export default function MarksReviewPage() {
     }
 
     return sortedParticipants;
-  }, [marks]);
+  }, [marks, marksData?.results, selectedProgramData, conversationPairs]);
 
   const handleCalculate = () => {
     setShowCalculateConfirm(true);
@@ -299,6 +377,30 @@ export default function MarksReviewPage() {
         addToast({ title: 'Calculation Error', message: e.message, type: 'error' });
     } finally {
         setVerifying(false);
+    }
+  };
+
+  const confirmRecalculateGrades = async () => {
+    setShowRecalculateGradesConfirm(false);
+    setRecalculatingGrades(true);
+    setVerifyResults(null); // Clear any previous verify results panel
+    try {
+      const result = await apiRequest(`/marks/recalculate-grades/${selectedProgram}`, 'POST');
+      await refreshTeams();
+      await refreshParticipants();
+      invalidateIndividualRankings();
+      await refreshPrograms();
+      refreshMarks();
+
+      addToast({ 
+        title: 'Success', 
+        message: result.message || 'Grades recalculated successfully while preserving finalized positions.', 
+        type: 'success' 
+      });
+    } catch(e: any) {
+      addToast({ title: 'Recalculation Error', message: e.message || 'Failed to recalculate grades', type: 'error' });
+    } finally {
+      setRecalculatingGrades(false);
     }
   };
 
@@ -387,14 +489,6 @@ export default function MarksReviewPage() {
 
   const languages = ['All', ...Array.from(new Set(programs.map(p => p.language))).filter(Boolean)];
 
-  if (contextLoading && programs.length === 0) {
-    return (
-        <div className="min-h-screen bg-[#0F0D15] flex items-center justify-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
-        </div>
-    );
-  }
-
   const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
   const filterPopoverRef = useRef<HTMLDivElement>(null);
 
@@ -412,6 +506,14 @@ export default function MarksReviewPage() {
   }, [isFilterPopoverOpen]);
 
   const hasActiveFilters = selectedFilterGroup !== 'All' || selectedFilterLang !== 'All';
+
+  if (isProgramsLoading && programs.length === 0) {
+    return (
+        <div className="min-h-screen bg-[#0F0D15] flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+        </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-20 animate-in fade-in duration-500">
@@ -566,14 +668,27 @@ export default function MarksReviewPage() {
                         }
 
                         return (
-                            <button
-                                onClick={handleCalculate}
-                                disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
-                            >
-                                {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={15} /> : <Trophy size={15} />}
-                                {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleCalculate}
+                                    disabled={!selectedProgram || verifying || (selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed'}
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
+                                >
+                                    {(selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed' ? <CheckCircle size={15} /> : <Trophy size={15} />}
+                                    {verifying ? 'Verifying...' : ((selectedProgram && verifiedPrograms.has(selectedProgram)) || selectedProgramData?.status === 'completed') ? 'Verified' : 'Verify & Calculate'}
+                                </button>
+                                {isCompleted && selectedProgramData?.gradeSystemEnabled && (
+                                    <button
+                                        onClick={() => setShowRecalculateGradesConfirm(true)}
+                                        disabled={!selectedProgram || recalculatingGrades || verifying}
+                                        className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3.5 py-1.5 md:py-2 rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 whitespace-nowrap"
+                                        title="Recalculate grades for completed program without altering finalized positions"
+                                    >
+                                        <Award size={15} />
+                                        {recalculatingGrades ? 'Recalculating...' : 'Recalculate Grades'}
+                                    </button>
+                                )}
+                            </div>
                         );
                     })()}
 
@@ -809,7 +924,14 @@ export default function MarksReviewPage() {
                                                 {m.participant?.chestNumber}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-bold text-white group-hover:text-purple-300 transition-colors truncate">{m.participant?.name}</div>
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-bold text-white group-hover:text-purple-300 transition-colors truncate">{m.participant?.name}</span>
+                                                    {m.grade && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
+                                                            Grade {m.grade} {m.percentage != null ? `(${m.percentage}%)` : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-[10px] text-gray-500 uppercase tracking-wider font-bold mt-0.5 truncate">{m.participant?.teamId?.name || 'No Team'}</div>
                                             </div>
                                         </div>
@@ -876,6 +998,11 @@ export default function MarksReviewPage() {
                                         <span className="inline-block px-4 py-1.5 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 font-mono text-xl font-black shadow-inner">
                                             {m.totalScore}
                                         </span>
+                                        {m.gradePoints > 0 && (
+                                            <span className="block text-[10px] text-cyan-400 font-bold mt-0.5 font-mono">
+                                                +{m.gradePoints} Grade Bonus
+                                            </span>
+                                        )}
                                     </div>
 
                                     {/* Rank */}
@@ -948,13 +1075,22 @@ export default function MarksReviewPage() {
                                                 {m.participant?.chestNumber}
                                             </div>
                                             <div>
-                                                <div className="font-bold text-white text-sm">{m.participant?.name}</div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="font-bold text-white text-sm">{m.participant?.name}</span>
+                                                    {m.grade && (
+                                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 shrink-0">
+                                                            Gr {m.grade}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="text-[10px] text-gray-500 uppercase font-bold mt-0.5">{m.participant?.teamId?.name || 'No Team'}</div>
                                             </div>
                                         </div>
                                         <div className="text-right">
                                             <div className="text-yellow-400 font-mono text-xl font-black">{m.totalScore}</div>
-                                            <div className="text-[10px] text-gray-500 uppercase font-bold">Total</div>
+                                            <div className="text-[10px] text-gray-500 uppercase font-bold">
+                                                {m.gradePoints > 0 ? `Total (+${m.gradePoints} gr)` : 'Total'}
+                                            </div>
                                         </div>
                                     </div>
                                     
@@ -1163,6 +1299,17 @@ export default function MarksReviewPage() {
           isLoading={verifying}
           onConfirm={confirmCalculateMissingScores}
           onCancel={() => setShowMissingResultsConfirm(false)}
+        />
+        <ConfirmModal
+          isOpen={showRecalculateGradesConfirm}
+          title="Recalculate Grades for Completed Program"
+          message="This program is completed and its positions are finalized. Would you like to recalculate grades and grade points for approved marks using the current grade rules? Finalized positions and position points will NOT be changed."
+          confirmText="Recalculate Grades"
+          cancelText="Cancel"
+          variant="warning"
+          isLoading={recalculatingGrades}
+          onConfirm={confirmRecalculateGrades}
+          onCancel={() => setShowRecalculateGradesConfirm(false)}
         />
         <ConfirmModal
           isOpen={showApproveAllConfirm}

@@ -354,6 +354,7 @@ export const useReviewPrograms = () => {
 
 export interface ReviewProgramMarksResponse {
   marks: any[];
+  results?: any[];
   assignedJudges: any[];
   total: number;
   page: number;
