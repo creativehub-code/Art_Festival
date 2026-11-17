@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { Users, LayoutGrid, Award, Calendar, FileText, LogOut, CheckSquare, PanelLeftClose, PanelLeftOpen, BarChart3, Shield, UsersRound, Gavel, BookOpen, Plus, Menu, X, Layers } from 'lucide-react';
+import { Users, LayoutGrid, Award, Calendar, FileText, LogOut, CheckSquare, PanelLeftClose, PanelLeftOpen, BarChart3, Shield, UsersRound, Gavel, BookOpen, Plus, Menu, X, Layers, Hash, Settings, ChevronDown } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -25,10 +25,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     },
   }));
 
+  const isSettingsRoute = pathname === '/admin/stages' || pathname === '/admin/ranges';
+  const [isMobileSettingsOpen, setIsMobileSettingsOpen] = useState(isSettingsRoute);
+
   useEffect(() => {
     setIsMobileMenuOpen(false);
     setIsThreeDotMenuOpen(false);
-  }, [pathname]);
+    if (isSettingsRoute) {
+      setIsMobileSettingsOpen(true);
+    }
+  }, [pathname, isSettingsRoute]);
 
   // Close three-dot menu on click outside
   useEffect(() => {
@@ -104,10 +110,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <NavLink href="/admin/teams" icon={<Shield size={18}/>} isSidebarOpen={isSidebarOpen}>Teams</NavLink>
             <NavLink href="/admin/groups" icon={<UsersRound size={18}/>} isSidebarOpen={isSidebarOpen}>Groups</NavLink>
             <NavLink href="/admin/programs" icon={<BookOpen size={18}/>} isSidebarOpen={isSidebarOpen}>Programs</NavLink>
-            <NavLink href="/admin/stages" icon={<Layers size={18}/>} isSidebarOpen={isSidebarOpen}>Stages</NavLink>
             <NavLink href="/admin/judges" icon={<Gavel size={18}/>} isSidebarOpen={isSidebarOpen}>Judges</NavLink>
             <NavLink href="/admin/marks" icon={<CheckSquare size={18}/>} isSidebarOpen={isSidebarOpen}>Review Marks</NavLink>
             <NavLink href="/admin/export" icon={<BarChart3 size={18}/>} isSidebarOpen={isSidebarOpen}>Individual Marks</NavLink>
+            <SettingsNavGroup isSidebarOpen={isSidebarOpen} onOpenSidebar={() => setIsSidebarOpen(true)} />
           </nav>
 
           {/* Bottom actions */}
@@ -179,16 +185,59 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <span>Participants</span>
                 </Link>
 
-                <Link
-                  href="/admin/stages"
-                  onClick={() => setIsThreeDotMenuOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                    pathname === '/admin/stages' ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30' : 'text-gray-300 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <Layers size={16} className="text-pink-400" />
-                  <span>Stages</span>
-                </Link>
+                {/* Settings Collapsible in Mobile Menu */}
+                <div className="pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileSettingsOpen(!isMobileSettingsOpen)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                      isSettingsRoute
+                        ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30'
+                        : 'text-gray-300 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Settings size={16} className={isSettingsRoute ? 'text-purple-400' : 'text-gray-400'} />
+                      <span>Settings</span>
+                    </div>
+                    <ChevronDown
+                      size={14}
+                      className={`text-gray-400 transition-transform duration-200 ${
+                        isMobileSettingsOpen ? 'rotate-180 text-purple-400' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isMobileSettingsOpen && (
+                    <div className="pl-3 pr-1 py-1 space-y-1 ml-2.5 border-l border-white/[0.08] mt-1">
+                      <Link
+                        href="/admin/stages"
+                        onClick={() => setIsThreeDotMenuOpen(false)}
+                        className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                          pathname === '/admin/stages'
+                            ? 'bg-purple-600/30 text-purple-300 font-semibold'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <Layers size={14} className="text-pink-400" />
+                        <span>Stages</span>
+                      </Link>
+
+                      <Link
+                        href="/admin/ranges"
+                        onClick={() => setIsThreeDotMenuOpen(false)}
+                        className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                          pathname === '/admin/ranges'
+                            ? 'bg-purple-600/30 text-purple-300 font-semibold'
+                            : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <Hash size={14} className="text-cyan-400" />
+                        <span>Chest Number Ranges</span>
+                      </Link>
+                    </div>
+                  )}
+                </div>
 
                 <div className="border-t border-white/[0.06] my-1"></div>
 
@@ -292,3 +341,134 @@ function MobileNavLink({ href, icon, label }: { href: string; icon: React.ReactN
       </Link>
     );
   }
+
+function SettingsNavGroup({ isSidebarOpen, onOpenSidebar }: { isSidebarOpen: boolean; onOpenSidebar: () => void }) {
+  const pathname = usePathname();
+  const isStagesActive = pathname === '/admin/stages';
+  const isRangesActive = pathname === '/admin/ranges';
+  const isAnyChildActive = isStagesActive || isRangesActive;
+
+  const [isOpen, setIsOpen] = useState(isAnyChildActive);
+
+  // Automatically expand Settings whenever user is on either child route
+  useEffect(() => {
+    if (isAnyChildActive) {
+      setIsOpen(true);
+    }
+  }, [isAnyChildActive]);
+
+  const handleToggle = () => {
+    if (!isSidebarOpen) {
+      onOpenSidebar();
+      setIsOpen(true);
+      return;
+    }
+    setIsOpen(!isOpen);
+  };
+
+  return (
+    <div className="space-y-1">
+      {/* Parent Button */}
+      <button
+        type="button"
+        onClick={handleToggle}
+        className={`w-full relative flex items-center gap-3 py-2.5 rounded-xl transition-all duration-200 group text-sm font-medium ${
+          isAnyChildActive
+            ? 'bg-[#1C1F35] text-white shadow-sm'
+            : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
+        } ${isSidebarOpen ? 'px-4' : 'px-0 justify-center'}`}
+      >
+        {/* Active left accent bar */}
+        {isAnyChildActive && (
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-purple-500" />
+        )}
+
+        <span
+          className={`transition-colors duration-200 ${
+            isAnyChildActive ? 'text-purple-400' : 'text-gray-600 group-hover:text-gray-400'
+          }`}
+        >
+          <Settings size={18} />
+        </span>
+
+        {isSidebarOpen && (
+          <>
+            <span className="tracking-wide flex-1 text-left">Settings</span>
+            <ChevronDown
+              size={16}
+              className={`text-gray-500 transition-transform duration-200 ${
+                isOpen ? 'rotate-180 text-purple-400' : 'group-hover:text-gray-400'
+              }`}
+            />
+          </>
+        )}
+
+        {/* Active indicator dot when sidebar is collapsed */}
+        {isAnyChildActive && !isSidebarOpen && (
+          <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-purple-500" />
+        )}
+
+        {/* Tooltip when collapsed */}
+        {!isSidebarOpen && (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-50 shadow-xl">
+            Settings
+          </div>
+        )}
+      </button>
+
+      {/* Expanded Children */}
+      {isSidebarOpen && isOpen && (
+        <div className="pl-4 pr-1 py-1 space-y-1 ml-3 border-l border-white/[0.08] animate-in fade-in slide-in-from-top-1 duration-150">
+          <ChildNavLink
+            href="/admin/stages"
+            icon={<Layers size={16} />}
+            label="Stages"
+            isActive={isStagesActive}
+          />
+          <ChildNavLink
+            href="/admin/ranges"
+            icon={<Hash size={16} />}
+            label="Chest Number Ranges"
+            isActive={isRangesActive}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChildNavLink({
+  href,
+  icon,
+  label,
+  isActive,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  isActive: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`relative flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 group ${
+        isActive
+          ? 'bg-purple-600/20 text-purple-300 font-semibold shadow-sm'
+          : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.04]'
+      }`}
+    >
+      {isActive && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-3.5 rounded-r-full bg-purple-400" />
+      )}
+      <span
+        className={`transition-colors duration-200 ${
+          isActive ? 'text-purple-300' : 'text-gray-500 group-hover:text-gray-300'
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+      {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-purple-400" />}
+    </Link>
+  );
+}
