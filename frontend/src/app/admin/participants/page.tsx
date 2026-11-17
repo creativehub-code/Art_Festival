@@ -149,7 +149,7 @@ export default function ParticipantsPage() {
   const { data: groups = [] as any[] } = useGroups();
   const { data: teams = [] as any[] } = useTeams();
   const { data: programs = [] as any[] } = usePrograms();
-  const { invalidateParticipants, invalidateTeams, invalidateGroups, invalidateTeamParticipants, invalidateGroupParticipants, invalidateProgramParticipants } = useInvalidate();
+  const { invalidateParticipants, invalidateTeams, invalidateGroups, invalidateTeamParticipants, invalidateGroupParticipants, invalidateProgramParticipants, invalidateChestRanges } = useInvalidate();
   const { toasts, addToast, dismissToast } = useToast();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
@@ -211,8 +211,65 @@ export default function ParticipantsPage() {
   }, [createPartnerSearchQ, form.programId, form.teamId, form.groupId, programs, createGroupPartners]);
 
 
+  // Chest Number Range state for participant creation
+  const [rangeInfo, setRangeInfo] = useState<{
+    nextChestNumber: string;
+    startNumber: number;
+    endNumber: number;
+    totalAssigned: number;
+    remainingCapacity: number;
+  } | null>(null);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [isRangeFull, setIsRangeFull] = useState(false);
+  const [isManualChest, setIsManualChest] = useState(false);
+  const [isLoadingNextChest, setIsLoadingNextChest] = useState(false);
+
+  const fetchNextChestNumber = React.useCallback(async (groupId: string, force = false) => {
+    if (!groupId) {
+      setRangeInfo(null);
+      setRangeError(null);
+      setIsRangeFull(false);
+      return;
+    }
+    setIsLoadingNextChest(true);
+    setRangeError(null);
+    try {
+      const res = await apiRequest(`/chest-ranges/group/${groupId}/next`);
+      if (res?.data) {
+        setRangeInfo(res.data);
+        setIsRangeFull(false);
+        if (force || !isManualChest) {
+          setForm(prev => ({ ...prev, chestNumber: String(res.data.nextChestNumber) }));
+        }
+      }
+    } catch (err: any) {
+      setRangeInfo(null);
+      const errMsg = err.message || '';
+      if (errMsg.toLowerCase().includes('exhausted')) {
+        setIsRangeFull(true);
+        setRangeError(errMsg);
+      } else if (errMsg.toLowerCase().includes('not configured')) {
+        // No range configured for this group: preserve manual registration
+        setRangeInfo(null);
+        setRangeError(null);
+        setIsRangeFull(false);
+      } else {
+        setRangeError(errMsg);
+      }
+    } finally {
+      setIsLoadingNextChest(false);
+    }
+  }, [isManualChest]);
+
   const [hoveredParticipant, setHoveredParticipant] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // When create form opens, if group is selected but chest number is empty, fetch next
+  useEffect(() => {
+    if (showCreateForm && form.groupId && !isManualChest && !form.chestNumber) {
+      fetchNextChestNumber(form.groupId, false);
+    }
+  }, [showCreateForm, form.groupId, isManualChest, form.chestNumber, fetchNextChestNumber]);
   const [viewParticipant, setViewParticipant] = useState<any>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -434,6 +491,7 @@ export default function ParticipantsPage() {
         image: form.image
       });
       invalidateParticipants();
+      invalidateChestRanges();
       finalPrograms.forEach((pid: string) => invalidateProgramParticipants(pid));
       if (form.teamId) {
         invalidateTeams();
@@ -443,8 +501,13 @@ export default function ParticipantsPage() {
         invalidateGroups();
         invalidateGroupParticipants(form.groupId);
       }
+      const keptGroupId = form.groupId;
       // Keep teamId and groupId for faster entry, reset others
       setForm(prev => ({ ...prev, name: '', chestNumber: '', selectedPrograms: [], selectedTopics: {}, programId: '', topicId: '', language: '', image: '' }));
+      setIsManualChest(false);
+      if (keptGroupId) {
+        fetchNextChestNumber(keptGroupId, true);
+      }
       setCreateGroupPartners({});
       setCreatePartnerSearchQ('');
       setCreatePartnerResults([]);
@@ -465,6 +528,7 @@ export default function ParticipantsPage() {
       const programsToInvalidate = target?.programs?.map((p: any) => p._id || p) || [];
       await apiRequest(`/participants/${deleteConfirmId}`, 'DELETE');
       invalidateParticipants();
+      invalidateChestRanges();
       invalidateTeams();
       invalidateGroups();
       programsToInvalidate.forEach((pid: string) => invalidateProgramParticipants(pid));
@@ -544,14 +608,68 @@ export default function ParticipantsPage() {
                         />
                     </div>
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300 ml-1">Chest Number</label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium text-gray-300 ml-1">Chest Number</label>
+                            {rangeInfo && (
+                                <span className="text-[11px] font-mono text-purple-400 bg-purple-950/40 border border-purple-500/30 px-2 py-0.5 rounded-md">
+                                    Range: {rangeInfo.startNumber} - {rangeInfo.endNumber}
+                                </span>
+                            )}
+                        </div>
                         <input 
-                            placeholder="E.g. CH-101" 
+                            placeholder={isLoadingNextChest ? "Fetching next available..." : "E.g. 101"} 
                             value={form.chestNumber} 
-                            onChange={e => setForm({...form, chestNumber: e.target.value})}
+                            onChange={e => {
+                                setIsManualChest(true);
+                                setForm(prev => ({ ...prev, chestNumber: e.target.value }));
+                            }}
                             className="w-full p-4 rounded-xl bg-[#13111C] border border-gray-700/50 text-white focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-all placeholder:text-gray-600"
                             required
                         />
+
+                        {/* Status & Helper Info */}
+                        {isLoadingNextChest && (
+                            <p className="text-xs text-purple-400 animate-pulse flex items-center gap-1.5 mt-1 ml-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 inline-block animate-ping" />
+                                Fetching next available chest number...
+                            </p>
+                        )}
+
+                        {!isLoadingNextChest && isRangeFull && (
+                            <div className="mt-1.5 p-2.5 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-start gap-2">
+                                <AlertTriangle size={15} className="shrink-0 text-red-400 mt-0.5" />
+                                <span>Range is full. All numbers in this group's configured range are allocated. Expand range in Range Management or enter manually.</span>
+                            </div>
+                        )}
+
+                        {!isLoadingNextChest && !isRangeFull && rangeInfo && (
+                            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs px-1">
+                                <span className="text-gray-400 flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                                    <span className="text-emerald-400 font-semibold">{rangeInfo.remainingCapacity} slots remaining</span>
+                                    <span className="text-gray-500">({rangeInfo.totalAssigned} assigned)</span>
+                                </span>
+
+                                {isManualChest && rangeInfo.nextChestNumber && form.chestNumber !== String(rangeInfo.nextChestNumber) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsManualChest(false);
+                                            setForm(prev => ({ ...prev, chestNumber: String(rangeInfo.nextChestNumber) }));
+                                        }}
+                                        className="text-[11px] text-purple-400 hover:text-purple-300 underline font-medium cursor-pointer"
+                                    >
+                                        Reset to suggested ({rangeInfo.nextChestNumber})
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {!isLoadingNextChest && !rangeInfo && !rangeError && (
+                            <p className="text-xs text-gray-500 mt-1 ml-1">
+                                {form.groupId ? 'No range configured for this group. Manual entry allowed.' : 'Select a group to auto-assign next chest number.'}
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>
@@ -579,7 +697,17 @@ export default function ParticipantsPage() {
                   <label className="text-sm font-medium text-gray-300 ml-1">Assign Group</label>
                   <CustomSelect 
                       value={form.groupId}
-                      onChange={(val: string) => setForm({...form, groupId: val})}
+                      onChange={(val: string) => {
+                        setForm(prev => ({ ...prev, groupId: val }));
+                        setIsManualChest(false);
+                        if (val) {
+                          fetchNextChestNumber(val, true);
+                        } else {
+                          setRangeInfo(null);
+                          setRangeError(null);
+                          setIsRangeFull(false);
+                        }
+                      }}
                       options={groups.map(g => ({ value: g._id, label: g.name }))}
                       placeholder="Select a Group..."
                       icon={Layers}

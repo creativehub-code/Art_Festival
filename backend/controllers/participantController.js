@@ -6,6 +6,8 @@ const ConversationPair = require("../models/ConversationPair");
 const JudgeMark = require("../models/JudgeMark");
 const ProgramResult = require("../models/ProgramResult");
 const MarkAuditLog = require("../models/MarkAuditLog");
+const ChestNumberConfig = require("../models/ChestNumberConfig");
+const { normalizeChestNumber } = require("../utils/chestNumberUtils");
 const sendError = require("../utils/errorResponse");
 const { recalculateProgramScoresInternal } = require("./markController");
 
@@ -265,7 +267,26 @@ const createParticipant = async (req, res) => {
       }
     }
 
-    const participantExists = await Participant.findOne({ chestNumber });
+    let normalizedChestNumber = chestNumber;
+    try {
+      normalizedChestNumber = normalizeChestNumber(chestNumber);
+    } catch (err) {
+      return res.status(400).json({ message: err.message });
+    }
+
+    if (groupId) {
+      const groupRange = await ChestNumberConfig.findOne({ groupId, isActive: true });
+      if (groupRange) {
+        const numVal = parseInt(normalizedChestNumber, 10);
+        if (numVal < groupRange.startNumber || numVal > groupRange.endNumber) {
+          return res.status(400).json({
+            message: `Chest number '${normalizedChestNumber}' is outside the valid range [${groupRange.startNumber}, ${groupRange.endNumber}] configured for this group`,
+          });
+        }
+      }
+    }
+
+    const participantExists = await Participant.findOne({ chestNumber: normalizedChestNumber });
     if (participantExists) {
       return res
         .status(400)
@@ -343,7 +364,7 @@ const createParticipant = async (req, res) => {
     await session.withTransaction(async () => {
       const newParticipant = new Participant({
         name,
-        chestNumber,
+        chestNumber: normalizedChestNumber,
         teamId,
         groupId,
         programs: programs || [],
@@ -417,7 +438,59 @@ const updateParticipant = async (req, res) => {
     const groupId = req.body.groupId || undefined;
     const updateData = {};
     if (name !== undefined) updateData.name = name;
-    if (chestNumber !== undefined) updateData.chestNumber = chestNumber;
+    if (chestNumber !== undefined) {
+      let normalizedChestNumber;
+      try {
+        normalizedChestNumber = normalizeChestNumber(chestNumber);
+      } catch (err) {
+        return res.status(400).json({ message: err.message });
+      }
+
+      const existingDup = await Participant.findOne({
+        chestNumber: normalizedChestNumber,
+        _id: { $ne: req.params.id },
+      });
+      if (existingDup) {
+        return res
+          .status(400)
+          .json({ message: "Participant with this chest number already exists" });
+      }
+
+      const targetGroupId = groupId !== undefined ? groupId : participant.groupId;
+      if (targetGroupId) {
+        const groupRange = await ChestNumberConfig.findOne({
+          groupId: targetGroupId,
+          isActive: true,
+        });
+        if (groupRange) {
+          const numVal = parseInt(normalizedChestNumber, 10);
+          if (numVal < groupRange.startNumber || numVal > groupRange.endNumber) {
+            return res.status(400).json({
+              message: `Chest number '${normalizedChestNumber}' is outside the valid range [${groupRange.startNumber}, ${groupRange.endNumber}] configured for this group`,
+            });
+          }
+        }
+      }
+
+      updateData.chestNumber = normalizedChestNumber;
+    } else if (groupId !== undefined && groupId?.toString() !== participant.groupId?.toString()) {
+      const groupRange = await ChestNumberConfig.findOne({
+        groupId,
+        isActive: true,
+      });
+      if (groupRange) {
+        try {
+          const numVal = parseInt(normalizeChestNumber(participant.chestNumber), 10);
+          if (numVal < groupRange.startNumber || numVal > groupRange.endNumber) {
+            return res.status(400).json({
+              message: `Cannot move participant to this group: their current chest number '${participant.chestNumber}' is outside the group's range [${groupRange.startNumber}, ${groupRange.endNumber}]`,
+            });
+          }
+        } catch (e) {
+          // ignore non-integer legacy chest numbers
+        }
+      }
+    }
     if (teamId !== undefined) updateData.teamId = teamId;
     if (groupId !== undefined) updateData.groupId = groupId;
     if (programs !== undefined) updateData.programs = programs;

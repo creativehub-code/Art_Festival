@@ -449,6 +449,35 @@ export const useInvalidate = () => {
     invalidateIndividualRankings: () => {
       queryClient.invalidateQueries({ queryKey: ['individualRankings'] });
       queryClient.invalidateQueries({ queryKey: ['participantResults'] });
+    },
+    invalidateChestRanges: () => {
+      queryClient.invalidateQueries({ queryKey: ['chestRanges'] });
+      queryClient.invalidateQueries({ queryKey: ['nextChestNumber'] });
     }
   };
+};
+
+// --- CHEST NUMBER RANGES HOOKS ---
+
+export const useChestRanges = () => {
+  return useQuery<any[]>({
+    queryKey: ['chestRanges'],
+    queryFn: async () => {
+      const res = await apiRequest('/chest-ranges');
+      return res?.data || [];
+    },
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useGroupNextChestNumber = (groupId: string | null) => {
+  return useQuery<any>({
+    queryKey: ['nextChestNumber', groupId],
+    queryFn: async () => {
+      if (!groupId) return null;
+      const res = await apiRequest(`/chest-ranges/group/${groupId}/next`);
+      return res?.data || null;
+    },
+    enabled: !!groupId,
+  });
 };
